@@ -4,7 +4,7 @@ name: scalefix image
 # ghcr.io/<owner>/kubevirt-redfish. Fork-only: not part of any upstream PR.
 on:
   push:
-    branches: [main, kubevirt-1.8-tp-scalefix]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -25,23 +25,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # main -> :main-scalefix, kubevirt-1.8-tp-scalefix -> :v4.22-scalefix;
-      # every build also gets an immutable :sha-<commit> tag.
-      - id: tag
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "name=main-scalefix" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=v4.22-scalefix" >> "$GITHUB_OUTPUT"
-          fi
-
+      # :main-scalefix follows main; :sha-<commit> is immutable, mirror that one.
       - uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/kubevirt-redfish:${{ steps.tag.outputs.name }}
+            ghcr.io/${{ github.repository_owner }}/kubevirt-redfish:main-scalefix
             ghcr.io/${{ github.repository_owner }}/kubevirt-redfish:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

@@ -18,10 +18,14 @@ To see exactly what an upstream PR would contain:
 git diff upstream/main..main -- pkg cmd config helm
 ```
 
-The branch `kubevirt-1.8-tp-scalefix` carries the same changes on top of upstream's
-`kubevirt-1.8-tp` branch (commit `44a671e`, the source of the Red Hat
-`kubevirt-redfish-rhel9:v4.22` image), plus a prebuilt static binary in `dist/` for
-air-gapped use. It is a deployment branch, not a PR candidate.
+`main` is the only working branch of this fork. Each push to it builds
+`ghcr.io/team-redbull/kubevirt-redfish:main-scalefix` and an immutable
+`:sha-<commit>` tag (`.github/workflows/scalefix-image.yml`).
+
+History: the changes were first written against upstream's `kubevirt-1.8-tp` branch
+(commit `44a671e`, the source of the Red Hat `kubevirt-redfish-rhel9:v4.22` image) on a
+branch `kubevirt-1.8-tp-scalefix`, which has since been deleted. Its images remain in
+GHCR as `:v4.22-scalefix` and `:sha-f1183ac418e090d255011e634ff82a0419546519`.
 
 ## The problem being solved
 
