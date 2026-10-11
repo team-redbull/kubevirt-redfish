@@ -256,7 +256,16 @@ kubevirt:
   
   # Timeout for KubeVirt API operations (in seconds)
   timeout: 30
-  
+
+  # client-go rate limiter for calls to the Kubernetes API. Each Redfish
+  # request fans out to several API calls (a GET System is 5, a boot-device
+  # PATCH is 11), so with N BMHs in flight the worst request takes roughly
+  # 11 * N / qps seconds. The client-go defaults (5 / 10) saturate at ~15 BMHs.
+  # Watch the pod log for "Waited for ... due to client-side throttling"; if
+  # it appears under load, raise these.
+  qps: 100
+  burst: 200
+
   # Allow insecure TLS for KubeVirt API operations
   # Set to false in production environments
   allow_insecure_tls: true

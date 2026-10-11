@@ -208,8 +208,19 @@ func NewClient(configPath string, timeout time.Duration, appConfig interface{}) 
 	// Kubernetes API calls, and with many BMHs polling concurrently the
 	// default limiter saturates: requests queue for many seconds, the
 	// OpenShift route times out (30s) and Ironic fails operations.
+	// The values come from kubevirt.qps / kubevirt.burst in the app config
+	// (or KUBEVIRT_REDFISH_KUBEVIRT_QPS / _BURST); the fallback below is only
+	// for callers that pass no config.
 	config.QPS = 100.0
 	config.Burst = 200
+	if appConfig != nil {
+		if rl, ok := appConfig.(interface {
+			GetKubeClientRateLimits() (float32, int)
+		}); ok {
+			config.QPS, config.Burst = rl.GetKubeClientRateLimits()
+		}
+	}
+	logger.Info("Kubernetes client rate limits: qps=%v burst=%d", config.QPS, config.Burst)
 
 	// Initialize random seed for unique PVC name generation
 	rand.Seed(time.Now().UnixNano())
