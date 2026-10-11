@@ -8,6 +8,7 @@ This repository is a fork of [kubevirt/redfish-controller](https://github.com/ku
 | `484d07d` | yes | Raise client-go rate limits; round-robin task worker selection |
 | `f878015` | yes | Make the rate limits configuration (`kubevirt.qps` / `kubevirt.burst`) |
 | `fe33538` | yes | Informer cache for VM/VMI reads; `server.workers`; zero-means-default config |
+| `c7c59a7` | yes | `go mod tidy`: test-only deps (`go-cmp` indirect, `goleak` in go.sum) pulled in by the fake dynamic client |
 | (next)    | **no** | `.github/workflows/scalefix-image.yml`: builds this fork's image on push |
 | (next)    | **no** | This file |
 
@@ -145,8 +146,9 @@ a virtual media insert; the ISO copy runs in that pod), so this bounds how many 
 - `pkg/config/config_test.go`: defaults, file and environment overrides, rejection of
   negative values, and zero-means-default for the new keys.
 
-`go.mod` / `go.sum` unchanged. `gofmt`, `go build ./...`, `go vet ./...`, `go test ./...`
-all pass.
+`go.mod` gains one indirect test dependency and `go.sum` two lines (see the tidy commit);
+no runtime dependency changes. `gofmt`, `go build ./...`, `go vet ./...`, `go test ./...`
+and upstream's `go mod tidy` check all pass.
 
 ## Known limits
 
@@ -160,8 +162,8 @@ all pass.
 
 ## Opening the upstream PR
 
-1. Branch from upstream `main`, cherry-pick `484d07d`, `f878015`, `fe33538` (or squash
-   them into one). Do **not** include `.github/workflows/scalefix-image.yml` or this file.
+1. Branch from upstream `main`, cherry-pick `484d07d`, `f878015`, `fe33538` and the tidy
+   commit (or squash them into one). Do **not** include `.github/workflows/scalefix-image.yml` or this file.
 2. Use the "problem" and "change" sections above as the PR description; the before/after
    table and the three cache rules are what reviewers will ask about.
 3. Suggested PR title: *Scale to many concurrent BMHs: raise client-go rate limits,
