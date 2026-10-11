@@ -4,10 +4,12 @@ kubevirt:
   timeout: 30                                       # Timeout for Kubevirt API calls (30 seconds is default (typically unchanged unless testing)
   qps: 100                                          # client-go rate limit for Kubernetes API calls, sustained requests/second (100 is default)
   burst: 200                                        # client-go rate limit burst, max requests above qps in a spike (200 is default)
+  cache_enabled: true                               # Serve read-only VM/VMI lookups from an informer cache instead of the API (true is default)
 
 server:
   host: "0.0.0.0"                                   # Host for the Redfish server (0.0.0.0 is default (typically unchanged unless testing)
   port: 8443                                        # Port for the Redfish server (8443 is default (typically unchanged unless testing)
+  workers: 8                                        # Background task pool size for virtual media and other async tasks (8 is default)
   tls:
     enabled: false                                  # Disabled for development/testing (not required with OpenShift because of default route TLS)
     cert_file: "/etc/kubevirt-redfish/tls/tls.crt"  # Path to the certificate file (not required with OpenShift, but may be leveraged for other platforms)

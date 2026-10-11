@@ -114,6 +114,7 @@ kubevirt:
   timeout: 30
   qps: 100
   burst: 200
+  cache_enabled: true
   allow_insecure_tls: true
 
 # =============================================================================
@@ -123,6 +124,7 @@ kubevirt:
 server:
   host: "0.0.0.0"
   port: 8443
+  workers: 8
   tls:
     enabled: false
 

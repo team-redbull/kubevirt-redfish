@@ -129,7 +129,12 @@ func NewServer(config *config.Config, kubevirtClient *kubevirt.Client) *Server {
 	// Initialize background components only if not in test mode
 	if !config.Server.TestMode {
 		// Initialize enhanced task manager
-		taskManager = NewTaskManager(4, kubevirtClient) // 4 workers for background processing
+		workers := config.Server.Workers
+		if workers < 1 {
+			workers = 4 // config validation normally guarantees >= 1; keep the historical default otherwise
+		}
+		taskManager = NewTaskManager(workers, kubevirtClient)
+		logger.Info("Task manager started with %d workers", workers)
 
 		// Initialize job scheduler
 		jobScheduler = NewJobScheduler()
@@ -2101,7 +2106,7 @@ func (s *Server) resolveSystemVMandCheckAccess(w http.ResponseWriter, r *http.Re
 				continue
 			}
 			if cfg.Namespace == namespace {
-				vm, err := s.kubevirtClient.GetVM(namespace, vmName)
+				vm, err := s.kubevirtClient.GetVMForRead(namespace, vmName)
 				if err == nil && kubevirt.VMMatchesSelector(vm, cfg.VMSelector) {
 					vmFound = true
 					namespace = cfg.Namespace
@@ -2117,7 +2122,7 @@ func (s *Server) resolveSystemVMandCheckAccess(w http.ResponseWriter, r *http.Re
 				continue
 			}
 
-			vm, err := s.kubevirtClient.GetVM(cfg.Namespace, vmName)
+			vm, err := s.kubevirtClient.GetVMForRead(cfg.Namespace, vmName)
 			if err == nil && kubevirt.VMMatchesSelector(vm, cfg.VMSelector) {
 				vmFound = true
 				namespace = cfg.Namespace

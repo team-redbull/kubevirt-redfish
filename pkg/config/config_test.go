@@ -171,11 +171,81 @@ func TestKubeClientRateLimits(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects non-positive values", func(t *testing.T) {
-		for _, section := range []string{"  qps: 0\n", "  qps: -1\n", "  burst: 0\n"} {
+	t.Run("rejects negative values", func(t *testing.T) {
+		for _, section := range []string{"  qps: -1\n", "  burst: -1\n"} {
 			if _, err := LoadConfig(writeConfig(t, minimalConfig(section))); err == nil {
 				t.Errorf("Expected validation error for %q, got nil", section)
 			}
+		}
+	})
+
+	t.Run("zero means default", func(t *testing.T) {
+		config, err := LoadConfig(writeConfig(t, minimalConfig("  qps: 0\n  burst: 0\n")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if qps, burst := config.GetKubeClientRateLimits(); qps != DefaultKubeClientQPS || burst != DefaultKubeClientBurst {
+			t.Errorf("Expected defaults for zero values, got qps=%v burst=%d", qps, burst)
+		}
+	})
+}
+
+func TestWorkersAndCacheConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.Server.Workers != 8 {
+			t.Errorf("Expected default workers 8, got %d", config.Server.Workers)
+		}
+		if !config.GetVMCacheEnabled() {
+			t.Error("Expected VM cache enabled by default")
+		}
+	})
+
+	t.Run("from config file", func(t *testing.T) {
+		config, err := LoadConfig(writeConfig(t, minimalConfig("  cache_enabled: false\n")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.GetVMCacheEnabled() {
+			t.Error("Expected VM cache disabled by config file")
+		}
+	})
+
+	t.Run("from environment", func(t *testing.T) {
+		t.Setenv("KUBEVIRT_REDFISH_SERVER_WORKERS", "16")
+		t.Setenv("KUBEVIRT_REDFISH_KUBEVIRT_CACHE_ENABLED", "false")
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.Server.Workers != 16 {
+			t.Errorf("Expected workers 16 from env, got %d", config.Server.Workers)
+		}
+		if config.GetVMCacheEnabled() {
+			t.Error("Expected VM cache disabled from env")
+		}
+	})
+
+	t.Run("rejects out-of-range workers", func(t *testing.T) {
+		for _, v := range []string{"-1", "65"} {
+			t.Setenv("KUBEVIRT_REDFISH_SERVER_WORKERS", v)
+			if _, err := LoadConfig(writeConfig(t, minimalConfig(""))); err == nil {
+				t.Errorf("Expected validation error for workers=%s, got nil", v)
+			}
+		}
+	})
+
+	t.Run("zero workers means default", func(t *testing.T) {
+		t.Setenv("KUBEVIRT_REDFISH_SERVER_WORKERS", "0")
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.Server.Workers != DefaultWorkers {
+			t.Errorf("Expected default workers %d for zero, got %d", DefaultWorkers, config.Server.Workers)
 		}
 	})
 }

@@ -52,6 +52,7 @@
 //	  timeout: 30
 //	  qps: 100
 //	  burst: 200
+//	  cache_enabled: true
 package config
 
 import (
@@ -91,6 +92,9 @@ type ServerConfig struct {
 	Port     int       `mapstructure:"port"`
 	TLS      TLSConfig `mapstructure:"tls"`
 	TestMode bool      `mapstructure:"test_mode"` // Disables background processes for testing
+	// Workers is the size of the background task pool that runs virtual media
+	// inserts/ejects and other async Redfish tasks. Read once at startup.
+	Workers int `mapstructure:"workers"`
 }
 
 // TLSConfig holds TLS configuration for secure HTTPS connections.
@@ -180,6 +184,14 @@ func passwordDecodeHook(from reflect.Type, to reflect.Type, data interface{}) (i
 
 // KubeVirtConfig holds KubeVirt-specific configuration parameters.
 // It includes API version settings, timeout configurations, and TLS settings for KubeVirt operations.
+// Defaults applied when a value is left unset (zero). The client-go defaults
+// (5 QPS / 10 burst) are sized for a CLI and saturate at ~15 BMHs.
+const (
+	DefaultKubeClientQPS   float32 = 100
+	DefaultKubeClientBurst int     = 200
+	DefaultWorkers         int     = 8
+)
+
 type KubeVirtConfig struct {
 	APIVersion       string `mapstructure:"api_version"`
 	Timeout          int    `mapstructure:"timeout"`
@@ -190,6 +202,9 @@ type KubeVirtConfig struct {
 	// those defaults queue requests for tens of seconds.
 	QPS   float32 `mapstructure:"qps"`
 	Burst int     `mapstructure:"burst"`
+	// CacheEnabled serves read-only VM/VMI lookups from an informer cache
+	// instead of the API server. On by default; see pkg/kubevirt/cache.go.
+	CacheEnabled bool `mapstructure:"cache_enabled"`
 }
 
 // CDIConfig holds CDI (Containerized Data Importer) configuration parameters.
@@ -300,12 +315,14 @@ func LoadConfig(configPath string) (*Config, error) {
 func setDefaults() {
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8443)
+	viper.SetDefault("server.workers", DefaultWorkers)
 	viper.SetDefault("server.tls.enabled", true)
 	viper.SetDefault("kubevirt.api_version", "v1")
 	viper.SetDefault("kubevirt.timeout", 30)
 	viper.SetDefault("kubevirt.allow_insecure_tls", false)
-	viper.SetDefault("kubevirt.qps", 100)
-	viper.SetDefault("kubevirt.burst", 200)
+	viper.SetDefault("kubevirt.qps", DefaultKubeClientQPS)
+	viper.SetDefault("kubevirt.burst", DefaultKubeClientBurst)
+	viper.SetDefault("kubevirt.cache_enabled", true)
 	viper.SetDefault("datavolume.storage_size", "10Gi")
 	viper.SetDefault("datavolume.allow_insecure_tls", false)
 	viper.SetDefault("datavolume.vm_update_timeout", "30s")
@@ -375,6 +392,15 @@ func validateServerConfig(server *ServerConfig) error {
 
 	if server.Port < 1 || server.Port > 65535 {
 		return errors.NewValidationError("Invalid server port", fmt.Sprintf("server.port must be between 1 and 65535, got %d", server.Port))
+	}
+
+	// Zero means "not set": apply the default so a Config built without viper
+	// (tests, programmatic use) validates the same way a loaded one does.
+	if server.Workers == 0 {
+		server.Workers = DefaultWorkers
+	}
+	if server.Workers < 1 || server.Workers > 64 {
+		return errors.NewValidationError("Invalid worker count", fmt.Sprintf("server.workers must be between 1 and 64, got %d", server.Workers))
 	}
 
 	if server.TLS.Enabled {
@@ -489,12 +515,18 @@ func validateKubeVirtConfig(kv *KubeVirtConfig) error {
 		return errors.NewValidationError("Invalid KubeVirt timeout", fmt.Sprintf("kubevirt.timeout must be between 1 and 300 seconds, got %d", kv.Timeout))
 	}
 
-	if kv.QPS <= 0 {
+	// Zero means "not set" (client-go's own convention): apply the defaults.
+	if kv.QPS == 0 {
+		kv.QPS = DefaultKubeClientQPS
+	}
+	if kv.Burst == 0 {
+		kv.Burst = DefaultKubeClientBurst
+	}
+	if kv.QPS < 0 {
 		return errors.NewValidationError("Invalid KubeVirt QPS", fmt.Sprintf("kubevirt.qps must be greater than 0, got %v", kv.QPS))
 	}
-
-	if kv.Burst < 1 {
-		return errors.NewValidationError("Invalid KubeVirt burst", fmt.Sprintf("kubevirt.burst must be at least 1, got %d", kv.Burst))
+	if kv.Burst < 0 {
+		return errors.NewValidationError("Invalid KubeVirt burst", fmt.Sprintf("kubevirt.burst must be greater than 0, got %d", kv.Burst))
 	}
 
 	return nil
@@ -699,6 +731,13 @@ func (c *Config) GetKubeClientRateLimits() (qps float32, burst int) {
 	return c.KubeVirt.QPS, c.KubeVirt.Burst
 }
 
+// GetVMCacheEnabled reports whether read-only VM/VMI lookups may be served
+// from the informer cache. Discovered by the kubevirt client the same way as
+// GetKubeClientRateLimits.
+func (c *Config) GetVMCacheEnabled() bool {
+	return c.KubeVirt.CacheEnabled
+}
+
 func (c *Config) GetDataVolumeConfig() (storageSize string, allowInsecureTLS bool, storageClass string, vmUpdateTimeout string, isoDownloadTimeout string, helperImage string) {
 	return c.DataVolume.StorageSize, c.DataVolume.AllowInsecureTLS, c.DataVolume.StorageClass, c.DataVolume.VMUpdateTimeout, c.DataVolume.ISODownloadTimeout, c.DataVolume.HelperImage
 }
@@ -764,6 +803,7 @@ kubevirt:
   timeout: 30        # Timeout in seconds for KubeVirt operations
   qps: 100           # client-go rate limit for Kubernetes API calls (sustained requests/second)
   burst: 200         # client-go rate limit burst (max requests above qps in a spike)
+  cache_enabled: true  # Serve read-only VM/VMI lookups from an informer cache
 
 # DataVolume Configuration
 # ------------------------

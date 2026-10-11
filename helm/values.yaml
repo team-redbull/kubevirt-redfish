@@ -203,7 +203,13 @@ server:
   
   # Server port
   port: 8443
-  
+
+  # Background task pool size (virtual media insert/eject and other async
+  # Redfish tasks). Each job is a short burst of Kubernetes API calls, so this
+  # bounds how many inserts start at once, not how many ISOs copy at once.
+  # Read at startup only; changing it needs a restart.
+  workers: 8
+
   # System ID convention for Redfish compliance
   # Options: "legacy" (vm-name only) or "enhanced" (namespace.vm-name)
   # Default: "legacy" for backward compatibility with existing Metal3/Ironic deployments
@@ -265,6 +271,12 @@ kubevirt:
   # it appears under load, raise these.
   qps: 100
   burst: 200
+
+  # Serve read-only VM/VMI lookups (power state, inventory, boot options,
+  # virtual media state, collections) from an in-memory informer cache instead
+  # of the Kubernetes API. Write paths always read live. Set false to fall back
+  # to one API call per lookup.
+  cache_enabled: true
 
   # Allow insecure TLS for KubeVirt API operations
   # Set to false in production environments
