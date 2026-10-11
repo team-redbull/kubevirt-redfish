@@ -203,6 +203,14 @@ func NewClient(configPath string, timeout time.Duration, appConfig interface{}) 
 		return nil, fmt.Errorf("failed to create kubeconfig: %w", err)
 	}
 
+	// Raise the client-side rate limits well above the client-go defaults
+	// (5 QPS / 10 burst). Every Redfish request fans out to several
+	// Kubernetes API calls, and with many BMHs polling concurrently the
+	// default limiter saturates: requests queue for many seconds, the
+	// OpenShift route times out (30s) and Ironic fails operations.
+	config.QPS = 100.0
+	config.Burst = 200
+
 	// Initialize random seed for unique PVC name generation
 	rand.Seed(time.Now().UnixNano())
 
