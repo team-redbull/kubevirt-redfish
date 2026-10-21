@@ -300,7 +300,7 @@ the logger).
 
 ## Upstream PRs
 
-Opened on 2026-10-21/22 against upstream `main` (`590daee`) as five independent PRs, so the
+Opened on 2026-10-21 against upstream `main` (`590daee`) as five independent PRs, so the
 maintainers can review and merge them separately and in any order. Each branch is based
 directly on upstream, and this fork's `main` is those five branches merged together:
 
