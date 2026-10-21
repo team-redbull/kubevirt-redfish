@@ -22,6 +22,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kubevirt/redfish-controller/pkg/errors"
@@ -187,6 +188,60 @@ func TestKubeClientRateLimits(t *testing.T) {
 		}
 		if qps, burst := config.GetKubeClientRateLimits(); qps != DefaultKubeClientQPS || burst != DefaultKubeClientBurst {
 			t.Errorf("Expected defaults for zero values, got qps=%v burst=%d", qps, burst)
+		}
+	})
+}
+
+func TestWorkersConfig(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.Server.Workers != 8 {
+			t.Errorf("Expected default workers 8, got %d", config.Server.Workers)
+		}
+	})
+
+	t.Run("from config file", func(t *testing.T) {
+		content := strings.Replace(minimalConfig(""), "  port: 8443\n", "  port: 8443\n  workers: 3\n", 1)
+		config, err := LoadConfig(writeConfig(t, content))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.Server.Workers != 3 {
+			t.Errorf("Expected workers 3 from config file, got %d", config.Server.Workers)
+		}
+	})
+
+	t.Run("from environment", func(t *testing.T) {
+		t.Setenv("KUBEVIRT_REDFISH_SERVER_WORKERS", "16")
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.Server.Workers != 16 {
+			t.Errorf("Expected workers 16 from env, got %d", config.Server.Workers)
+		}
+	})
+
+	t.Run("rejects out-of-range values", func(t *testing.T) {
+		for _, v := range []string{"-1", "65"} {
+			t.Setenv("KUBEVIRT_REDFISH_SERVER_WORKERS", v)
+			if _, err := LoadConfig(writeConfig(t, minimalConfig(""))); err == nil {
+				t.Errorf("Expected validation error for workers=%s, got nil", v)
+			}
+		}
+	})
+
+	t.Run("zero means default", func(t *testing.T) {
+		t.Setenv("KUBEVIRT_REDFISH_SERVER_WORKERS", "0")
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.Server.Workers != DefaultWorkers {
+			t.Errorf("Expected default workers %d for zero, got %d", DefaultWorkers, config.Server.Workers)
 		}
 	})
 }
