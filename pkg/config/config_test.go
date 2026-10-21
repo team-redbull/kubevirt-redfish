@@ -246,6 +246,39 @@ func TestWorkersConfig(t *testing.T) {
 	})
 }
 
+func TestVMCacheConfig(t *testing.T) {
+	t.Run("enabled by default", func(t *testing.T) {
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if !config.GetVMCacheEnabled() {
+			t.Error("Expected VM cache enabled by default")
+		}
+	})
+
+	t.Run("from config file", func(t *testing.T) {
+		config, err := LoadConfig(writeConfig(t, minimalConfig("  cache_enabled: false\n")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.GetVMCacheEnabled() {
+			t.Error("Expected VM cache disabled by config file")
+		}
+	})
+
+	t.Run("from environment", func(t *testing.T) {
+		t.Setenv("KUBEVIRT_REDFISH_KUBEVIRT_CACHE_ENABLED", "false")
+		config, err := LoadConfig(writeConfig(t, minimalConfig("")))
+		if err != nil {
+			t.Fatalf("Failed to load config: %v", err)
+		}
+		if config.GetVMCacheEnabled() {
+			t.Error("Expected VM cache disabled from env")
+		}
+	})
+}
+
 func TestLoadConfigWithDefaults(t *testing.T) {
 	// Create a temporary directory and config file
 	tempDir := t.TempDir()

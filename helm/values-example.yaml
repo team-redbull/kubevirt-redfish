@@ -114,6 +114,7 @@ kubevirt:
   timeout: 30
   qps: 100      # raised from the client-go default (5) for many concurrent BMHs
   burst: 200    # raised from the client-go default (10)
+  cache_enabled: true
   allow_insecure_tls: true
 
 # =============================================================================

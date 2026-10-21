@@ -52,6 +52,7 @@
 //	  timeout: 30
 //	  qps: 5
 //	  burst: 10
+//	  cache_enabled: true
 package config
 
 import (
@@ -207,6 +208,9 @@ type KubeVirtConfig struct {
 	// queue requests for tens of seconds; raise them for such deployments.
 	QPS   float32 `mapstructure:"qps"`
 	Burst int     `mapstructure:"burst"`
+	// CacheEnabled serves read-only VM/VMI lookups from an informer cache
+	// instead of the API server. On by default; see pkg/kubevirt/cache.go.
+	CacheEnabled bool `mapstructure:"cache_enabled"`
 }
 
 // CDIConfig holds CDI (Containerized Data Importer) configuration parameters.
@@ -324,6 +328,7 @@ func setDefaults() {
 	viper.SetDefault("kubevirt.allow_insecure_tls", false)
 	viper.SetDefault("kubevirt.qps", DefaultKubeClientQPS)
 	viper.SetDefault("kubevirt.burst", DefaultKubeClientBurst)
+	viper.SetDefault("kubevirt.cache_enabled", true)
 	viper.SetDefault("datavolume.storage_size", "10Gi")
 	viper.SetDefault("datavolume.allow_insecure_tls", false)
 	viper.SetDefault("datavolume.vm_update_timeout", "30s")
@@ -731,6 +736,13 @@ func (c *Config) GetKubeClientRateLimits() (qps float32, burst int) {
 	return c.KubeVirt.QPS, c.KubeVirt.Burst
 }
 
+// GetVMCacheEnabled reports whether read-only VM/VMI lookups may be served
+// from the informer cache. Discovered by the kubevirt client the same way as
+// GetDataVolumeConfig.
+func (c *Config) GetVMCacheEnabled() bool {
+	return c.KubeVirt.CacheEnabled
+}
+
 // GetDataVolumeConfig returns the DataVolume configuration settings.
 // This provides a safe way to access DataVolume settings without reflection.
 func (c *Config) GetDataVolumeConfig() (storageSize string, allowInsecureTLS bool, storageClass string, vmUpdateTimeout string, isoDownloadTimeout string, helperImage string) {
@@ -798,6 +810,7 @@ kubevirt:
   timeout: 30        # Timeout in seconds for KubeVirt operations
   qps: 5             # client-go rate limit for Kubernetes API calls (sustained requests/second)
   burst: 10          # client-go rate limit burst (max requests above qps in a spike)
+  cache_enabled: true  # Serve read-only VM/VMI lookups from an informer cache
 
 # DataVolume Configuration
 # ------------------------

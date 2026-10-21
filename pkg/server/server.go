@@ -2106,7 +2106,7 @@ func (s *Server) resolveSystemVMandCheckAccess(w http.ResponseWriter, r *http.Re
 				continue
 			}
 			if cfg.Namespace == namespace {
-				vm, err := s.kubevirtClient.GetVM(namespace, vmName)
+				vm, err := s.kubevirtClient.GetVMForRead(namespace, vmName)
 				if err == nil && kubevirt.VMMatchesSelector(vm, cfg.VMSelector) {
 					vmFound = true
 					namespace = cfg.Namespace
@@ -2122,7 +2122,7 @@ func (s *Server) resolveSystemVMandCheckAccess(w http.ResponseWriter, r *http.Re
 				continue
 			}
 
-			vm, err := s.kubevirtClient.GetVM(cfg.Namespace, vmName)
+			vm, err := s.kubevirtClient.GetVMForRead(cfg.Namespace, vmName)
 			if err == nil && kubevirt.VMMatchesSelector(vm, cfg.VMSelector) {
 				vmFound = true
 				namespace = cfg.Namespace
