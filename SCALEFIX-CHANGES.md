@@ -1,7 +1,7 @@
 # kubevirt-redfish at scale: every change in this fork, and how to upstream it
 
 This repository is a fork of [kubevirt/redfish-controller](https://github.com/kubevirt/redfish-controller).
-`main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the five open upstream PRs merged in, each as a
+`main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the nine open upstream PRs merged in, each as a
 merge commit of its PR branch, plus two fork-only files. Nothing else differs.
 
 | On `main` | Upstream PR? | Change |
@@ -11,6 +11,10 @@ merge commit of its PR branch, plus two fork-only files. Nothing else differs.
 | Merge of `task-worker-pool` | [#31](https://github.com/kubevirt/redfish-controller/pull/31) | Changes 2 + 4: round-robin worker selection, `server.workers` |
 | Merge of `vm-informer-cache` | [#32](https://github.com/kubevirt/redfish-controller/pull/32) | Change 3: informer cache for VM/VMI reads |
 | Merge of `fix-vm-write-race` | [#33](https://github.com/kubevirt/redfish-controller/pull/33) | Change 5: serialized, version-checked VM updates, so a concurrent insert and boot override cannot drop the `cdrom0` disk |
+| Merge of `fix-insert-power-race` | [#36](https://github.com/kubevirt/redfish-controller/pull/36) | Change 6: `InsertMedia` marks the VM before answering, so a Power On that arrives before the import job has run is deferred instead of starting the VM on an empty CD-ROM |
+| Merge of `fix-power-off-while-importing` | [#37](https://github.com/kubevirt/redfish-controller/pull/37) | Change 7: `ForceOff`/`GracefulShutdown` are never deferred by a pending import and withdraw a deferred power-on |
+| Merge of `fix-log-iso-url` | [#38](https://github.com/kubevirt/redfish-controller/pull/38) | Change 8: the image URL (which carries the image service token) is redacted in every log line |
+| Merge of `fix-failed-import-power-on` | [#39](https://github.com/kubevirt/redfish-controller/pull/39) | Change 9: a failed import drops the deferred power-on, reads as not inserted and lets the next insert import again |
 | Fork-only commit | **no** | `.github/workflows/scalefix-image.yml`: builds this fork's image on push |
 | Fork-only commit | **no** | This file |
 
@@ -299,6 +303,23 @@ directly on upstream, and this fork's `main` is those five branches merged toget
 | [#31](https://github.com/kubevirt/redfish-controller/pull/31) | `task-worker-pool` | Changes 2 + 4: round-robin worker selection and `server.workers`, with a new `pkg/server/task_manager_test.go` |
 | [#32](https://github.com/kubevirt/redfish-controller/pull/32) | `vm-informer-cache` | Change 3: `cache.go` / `cache_test.go`, the `go mod tidy` lines (the `kubevirt.cache_enabled` switch and the write tracker were dropped in review, `bd12d08`) |
 | [#33](https://github.com/kubevirt/redfish-controller/pull/33) | `fix-vm-write-race` | Change 5: every VM read-modify-write goes through `updateVM` (`vm_update.go`), serialized per VM (`vmlock.go`) and sent with `resourceVersion` so a stale write is retried instead of overwriting; fixes the `cdrom0` disk lost when `InsertMedia` and the boot-once `PATCH` race |
+
+Opened on 2026-10-25, the same way, for the virtual media insert vs. power-on race seen
+when many hosts are enrolled at once (the VM started with an empty CD-ROM and then held the
+RWO ISO volume, leaving the import pod on Multi-Attach and the host stuck in inspection):
+
+| PR | Branch (on this fork) | Content |
+|----|-----------------------|---------|
+| [#36](https://github.com/kubevirt/redfish-controller/pull/36) | `fix-insert-power-race` | Change 6: `MarkImportPending` writes a dated `pending-<unix>` placeholder into `importing.redfish/<device>` (and the URL annotation) before `InsertMedia` is answered; a repeat while pending is "in progress"; a failed job and a 5-minute reconcile sweep clear orphaned placeholders (`pkg/kubevirt/import_pending.go`) |
+| [#37](https://github.com/kubevirt/redfish-controller/pull/37) | `fix-power-off-while-importing` | Change 7: only `On`/`ForceRestart`/`GracefulRestart` wait for a pending import; a power-off runs at once and removes `power-after-import.redfish` (`ClearPowerAfterImportLabel`) |
+| [#38](https://github.com/kubevirt/redfish-controller/pull/38) | `fix-log-iso-url` | Change 8: `logger.RedactURL` (scheme, host, path only) on every log line that carried the image URL; the parse error no longer repeats the input |
+| [#39](https://github.com/kubevirt/redfish-controller/pull/39) | `fix-failed-import-power-on` | Change 9: a failed import pod removes the importing label, the deferred power command and sets `import-failed.redfish/<device>` in one patch; `Inserted` is false while importing or after a failure; `CheckInsertedMedia` lets the next insert import again; insert and eject clear the marker |
+
+Rebase note for these four: #39 adds one `delete(annotations, ...)` line to the eject that
+#33 rewrote around `updateVM`; the merge conflicts on that hunk and resolves to the same
+line inside the closure (see the merge commit of #39 on `main`). #36 names its GVR
+`virtualMachinesGVR` because #32 already has `vmGVR` in `cache.go`. #36 and #39 both touch
+`CheckInsertedMedia` in separate hunks and merge cleanly.
 
 Each PR body states the problem, the cause, the fix, the behaviour change and the
 evidence: the new unit test failing on upstream `main`, and before/after numbers measured

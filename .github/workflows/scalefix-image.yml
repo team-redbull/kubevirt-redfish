@@ -37,4 +37,4 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.description=kubevirt-redfish (${{ github.ref_name }}) + upstream PRs #29-#33 (worker stop, client-go rate limit, worker pool, VM/VMI cache, VM write race)
+            org.opencontainers.image.description=kubevirt-redfish (${{ github.ref_name }}) + upstream PRs #29-#33 (worker stop, client-go rate limit, worker pool, VM/VMI cache, VM write race) and #36-#39 (insert/power-on race, power-off not deferred, image URL redacted, failed import)
