@@ -97,7 +97,7 @@ always started at worker 1, which has 10 queue slots, so every job landed there.
 
 ## Change 3: an in-memory cache for VM and VMI reads
 
-The largest change: `pkg/kubevirt/cache.go` (new, ~420 lines) and small edits in
+The largest change: `pkg/kubevirt/cache.go` (new, plain client-go informers) and small edits in
 `client.go` and `server.go`.
 
 **What it does.** For every namespace in the chassis config the client keeps a
@@ -129,25 +129,15 @@ with the existing watchers (`RestartWatchers` / `Close`) and are rebuilt on conf
   including "not found". The alternative, a GET on every miss, would cost a GET on every
   power poll of a stopped VM (which has no VMI), the normal state of a host during
   inspection.
-- *After this process writes an object, reads skip the cache until the cache holds that
-  write.* A thin wrapper around the dynamic client (`trackingDynamicClient`) records the
-  `resourceVersion` returned by every successful VM/VMI create, update and patch, and
-  every delete. Reads of that object go to the API server until the informer has stored
-  that version (an event handler reports each version it stores, so a newer version
-  written by someone else right after ours also ends the bypass), or, for a delete,
-  until the cached copy is gone or has a `deletionTimestamp`. So a read that follows our
-  own write, like the response body of the boot-device `PATCH` or Ironic re-checking
-  `Inserted` right after an eject, never sees the old state, however far the watch lags.
-  `writeBypassMax` (30s) ends the bypass if the cache never reports the version, which
-  happens only when the watch broke and the re-list skipped past it; that case is logged
-  as a warning.
-  The tracker also remembers the last versions each informer stored (per object, at most
-  32, for at most `writeBypassMax`, dropped when the object is deleted). On a real API
-  server the watch event for our own write often reaches the informer *before* the
-  write call returns, and virt-controller writes a newer status within milliseconds, so
-  by the time the write is recorded the cache already holds a newer version. Without this
-  history such a write bypassed the cache for the full 30s after most power actions. The
-  versions are compared only for equality; resourceVersions are opaque and never ordered.
+- *A read that builds the response to our own write goes live.* The boot-device `PATCH`
+  handler writes the VM and then reads it back for its response body; that read uses
+  `GetVMBootOptionsLive`, so it never returns the pre-write boot options. No other write
+  path reads through a cached getter.
+
+  (The first revision of #32 instead wrapped the dynamic client in a write tracker that
+  bypassed the cache after each of this process's writes until the informer caught up.
+  Review asked for less machinery, and the revision `bd12d08` removed it; the fork's
+  `main` merged that revision on 2026-10-25.)
 
 **What the cache does not guarantee: writes by anyone else.** A change made outside this
 service (`oc edit vm`, KubeVirt's own controllers updating a VMI) reaches the cache when
@@ -157,8 +147,10 @@ CPU count. A direct GET would already see the change. This is the cost of the ca
 is acceptable because no write path reads from it, so a stale read can make a response
 out of date but cannot be written back over someone's change.
 
-**Off switch:** `kubevirt.cache_enabled: false` (or
-`KUBEVIRT_REDFISH_KUBEVIRT_CACHE_ENABLED=false`) restores one API call per lookup.
+**No off switch:** since `bd12d08` the cache is always on; `kubevirt.cache_enabled` and
+`KUBEVIRT_REDFISH_KUBEVIRT_CACHE_ENABLED` no longer exist (an old key in a config file is
+ignored). The only direct reads are the ones above and those made before an informer has
+synced.
 **Observability:** `GetMetrics` counts `GetVM.cache` / `GetVM.direct` (and the VMI and
 List equivalents). Startup logs `VM cache started for namespaces [...]`.
 **RBAC:** the informers need `list` and `watch` on `virtualmachines` and
@@ -196,19 +188,15 @@ the cache (change 3).
   so a `Config` built in code without viper still validates (an existing test does that).
 - `config/config.yaml`, `helm/values.yaml`, `helm/values-example.yaml`: the new keys with
   comments.
-- `helm/templates/secret.yaml`: renders `workers`, `qps`, `burst`, `cache_enabled` into
+- `helm/templates/secret.yaml`: renders `workers`, `qps`, `burst` into
   the mounted `config.yaml`.
 
 ## Tests
 
 - `pkg/kubevirt/cache_test.go` (new), against `k8s.io/client-go/dynamic/fake`: a read is
   served from the cache even when the API server's GET is made to fail; a synced cache's
-  "not found" is final; after a successful write, reads of that object bypass the cache
-  until the informer has seen the written version (also when a newer version replaces
-  it, and for a delete until the object is gone or terminating), and not for longer than
-  `writeBypassMax`; a write the informer saw before the write call returned does not
-  bypass at all, and the history of seen versions is bounded and forgotten on delete;
-  no-op and failed writes do not bypass; the cache can be disabled, restarted with a different
+  "not found" is final; reads before the initial sync go direct; the boot-options
+  read-back after a write is live; the cache can be restarted with a different
   namespace set, and stopped without deadlocking; `filterVMNames` sorts and filters.
 - `pkg/config/config_test.go`: defaults (rate limits 5/10), file and environment
   overrides, rejection of negative values, and zero-means-default for the new keys.
@@ -309,7 +297,7 @@ directly on upstream, and this fork's `main` is those five branches merged toget
 | [#29](https://github.com/kubevirt/redfish-controller/pull/29) | `fix-worker-stop` | `defer w.wg.Done()` in `Worker.work` (the shutdown hang under "Known limits") + `pkg/server/worker_test.go` |
 | [#30](https://github.com/kubevirt/redfish-controller/pull/30) | `client-go-rate-limits` | Change 1: `kubevirt.qps` / `kubevirt.burst`, `ratelimit_test.go`, logger initialized before the client |
 | [#31](https://github.com/kubevirt/redfish-controller/pull/31) | `task-worker-pool` | Changes 2 + 4: round-robin worker selection and `server.workers`, with a new `pkg/server/task_manager_test.go` |
-| [#32](https://github.com/kubevirt/redfish-controller/pull/32) | `vm-informer-cache` | Change 3: `cache.go` / `cache_test.go`, `kubevirt.cache_enabled`, the `go mod tidy` lines |
+| [#32](https://github.com/kubevirt/redfish-controller/pull/32) | `vm-informer-cache` | Change 3: `cache.go` / `cache_test.go`, the `go mod tidy` lines (the `kubevirt.cache_enabled` switch and the write tracker were dropped in review, `bd12d08`) |
 | [#33](https://github.com/kubevirt/redfish-controller/pull/33) | `fix-vm-write-race` | Change 5: every VM read-modify-write goes through `updateVM` (`vm_update.go`), serialized per VM (`vmlock.go`) and sent with `resourceVersion` so a stale write is retried instead of overwriting; fixes the `cdrom0` disk lost when `InsertMedia` and the boot-once `PATCH` race |
 
 Each PR body states the problem, the cause, the fix, the behaviour change and the
