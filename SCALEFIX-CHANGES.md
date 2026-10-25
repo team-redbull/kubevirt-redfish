@@ -1,7 +1,7 @@
 # kubevirt-redfish at scale: every change in this fork, and how to upstream it
 
 This repository is a fork of [kubevirt/redfish-controller](https://github.com/kubevirt/redfish-controller).
-`main` is upstream `main` (`590daee`) with the five open upstream PRs merged in, each as a
+`main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the five open upstream PRs merged in, each as a
 merge commit of its PR branch, plus two fork-only files. Nothing else differs.
 
 | On `main` | Upstream PR? | Change |
