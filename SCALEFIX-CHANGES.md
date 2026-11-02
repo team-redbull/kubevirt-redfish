@@ -1,7 +1,7 @@
 # kubevirt-redfish at scale: every change in this fork, and how to upstream it
 
 This repository is a fork of [kubevirt/redfish-controller](https://github.com/kubevirt/redfish-controller).
-`main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the nine open upstream PRs merged in, each as a
+`main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the ten open upstream PRs merged in, each as a
 merge commit of its PR branch, plus two fork-only files. Nothing else differs.
 
 | On `main` | Upstream PR? | Change |
@@ -15,6 +15,7 @@ merge commit of its PR branch, plus two fork-only files. Nothing else differs.
 | Merge of `fix-power-off-while-importing` | [#37](https://github.com/kubevirt/redfish-controller/pull/37) | Change 7: `ForceOff`/`GracefulShutdown` are never deferred by a pending import and withdraw a deferred power-on |
 | Merge of `fix-log-iso-url` | [#38](https://github.com/kubevirt/redfish-controller/pull/38) | Change 8: the image URL (which carries the image service token) is redacted in every log line |
 | Merge of `fix-failed-import-power-on` | [#39](https://github.com/kubevirt/redfish-controller/pull/39) | Change 9: a failed import drops the deferred power-on, reads as not inserted and lets the next insert import again |
+| Merge of `feature/system-memory-processors-storage-nics` | [#25](https://github.com/kubevirt/redfish-controller/pull/25) | Serves Memory, Processors, Storage (with drives) and EthernetInterfaces for each System, read from the running VMI first and the VM spec when stopped; `ComputerSystem.Memory` becomes a link and the total moves to `MemorySummary` |
 | Fork-only commit | **no** | `.github/workflows/scalefix-image.yml`: builds this fork's image on push |
 | Fork-only commit | **no** | This file |
 
@@ -320,6 +321,12 @@ Rebase note for these four: #39 adds one `delete(annotations, ...)` line to the 
 line inside the closure (see the merge commit of #39 on `main`). #36 names its GVR
 `virtualMachinesGVR` because #32 already has `vmGVR` in `cache.go`. #36 and #39 both touch
 `CheckInsertedMedia` in separate hunks and merge cleanly.
+
+Also merged: [#25](https://github.com/kubevirt/redfish-controller/pull/25)
+(`feature/system-memory-processors-storage-nics`, on the `TomerKarniol/redfish-controller` fork). It conflicted with #32/#33
+in the mock client (`notFoundError` kept) and in `client.go` (`GetVMCPU` dropped, as #25 replaces it). In the merge
+commit its new read paths were also moved onto the #32 cache (`getVMForRead`/`getVMIForRead`) and its
+`setCacheHeaders` calls became `setNoCacheHeaders`, matching the rest of this fork.
 
 Each PR body states the problem, the cause, the fix, the behaviour change and the
 evidence: the new unit test failing on upstream `main`, and before/after numbers measured
