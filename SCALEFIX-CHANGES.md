@@ -2,8 +2,8 @@
 
 This repository is a fork of [kubevirt/redfish-controller](https://github.com/kubevirt/redfish-controller).
 `main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the ten open upstream PRs merged in, each as a
-merge commit of its PR branch, plus the fork-only commits marked **no** in the table below (two files and change 10).
-Nothing else differs.
+merge commit of its PR branch, plus the fork-only commits marked **no** in the table below (two files; change 10 is on
+branch `feat/system-identity-fields` until it is merged). Nothing else differs.
 
 | On `main` | Upstream PR? | Change |
 |-----------|--------------|--------|
