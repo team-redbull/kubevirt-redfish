@@ -832,6 +832,29 @@ func TestSystemIdentity(t *testing.T) {
 		assert.Equal(t, "KubeVirt", b["Manufacturer"], "the manufacturer is not read from the cluster")
 	})
 
+	t.Run("a running VM reports the node it is scheduled on", func(t *testing.T) {
+		vmi := vmiOf(kubevirtv1.VirtualMachineInstanceSpec{}, kubevirtv1.VirtualMachineInstanceStatus{
+			Phase: kubevirtv1.Running, NodeName: "worker-3"})
+		srv := newDevicesTestServerWith(t, "", vmi, nil, declare("SER-1", "", "q35"))
+		kv := getJSON(t, srv, "/redfish/v1/Systems/vm-1")["Oem"].(map[string]interface{})["KubeVirt"].(map[string]interface{})
+		assert.Equal(t, "worker-3", kv["NodeName"])
+		assert.Contains(t, kv, "Processors", "the vCPU layout is still there")
+	})
+
+	t.Run("a stopped VM has no node", func(t *testing.T) {
+		srv := newDevicesTestServerWith(t, "", nil, nil, declare("SER-1", "", "q35"))
+		kv := getJSON(t, srv, "/redfish/v1/Systems/vm-1")["Oem"].(map[string]interface{})["KubeVirt"].(map[string]interface{})
+		assert.NotContains(t, kv, "NodeName")
+	})
+
+	t.Run("a finished VMI is not where the VM runs", func(t *testing.T) {
+		vmi := vmiOf(kubevirtv1.VirtualMachineInstanceSpec{}, kubevirtv1.VirtualMachineInstanceStatus{
+			Phase: kubevirtv1.Succeeded, NodeName: "worker-3"})
+		srv := newDevicesTestServerWith(t, "", vmi, nil, declare("SER-1", "", "q35"))
+		kv := getJSON(t, srv, "/redfish/v1/Systems/vm-1")["Oem"].(map[string]interface{})["KubeVirt"].(map[string]interface{})
+		assert.NotContains(t, kv, "NodeName")
+	})
+
 	t.Run("an unreadable VM gives the zero identity", func(t *testing.T) {
 		srv := newDevicesTestServer(t, "")
 		assert.Equal(t, kubevirt.VMIdentity{}, srv.identityFields("ns", "does-not-exist"))

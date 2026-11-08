@@ -279,12 +279,13 @@ func (c *Client) GetVMNICs(namespace, name string) ([]VMNIC, error) {
 }
 
 // VMIdentity is what a VM reports about itself as a machine: the SMBIOS
-// system serial number and UUID, and the QEMU machine type. Each field is
-// empty when nothing declares it.
+// system serial number and UUID, the QEMU machine type, and the node a running
+// VM is scheduled on. Each field is empty when nothing declares it.
 type VMIdentity struct {
 	Serial      string
 	UUID        string
 	MachineType string
+	NodeName    string
 }
 
 // GetVMIdentity returns the serial number, UUID and machine type of a VM.
@@ -325,6 +326,9 @@ func (c *Client) GetVMIdentity(namespace, name string) (VMIdentity, error) {
 	}
 	if id.UUID == "" {
 		id.UUID = string(vm.UID)
+	}
+	if vmi != nil {
+		id.NodeName = vmi.Status.NodeName
 	}
 	return id, nil
 }

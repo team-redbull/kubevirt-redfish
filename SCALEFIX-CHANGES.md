@@ -2,7 +2,7 @@
 
 This repository is a fork of [kubevirt/redfish-controller](https://github.com/kubevirt/redfish-controller).
 `main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the ten open upstream PRs merged in, each as a
-merge commit of its PR branch, plus the fork-only commits marked **no** in the table below (two files and change 10). Nothing else differs.
+merge commit of its PR branch, plus the fork-only commits marked **no** in the table below (two files and changes 10 and 11). Nothing else differs.
 
 | On `main` | Upstream PR? | Change |
 |-----------|--------------|--------|
@@ -17,6 +17,7 @@ merge commit of its PR branch, plus the fork-only commits marked **no** in the t
 | Merge of `fix-failed-import-power-on` | [#39](https://github.com/kubevirt/redfish-controller/pull/39) | Change 9: a failed import drops the deferred power-on, reads as not inserted and lets the next insert import again |
 | Merge of `feature/system-memory-processors-storage-nics` | [#25](https://github.com/kubevirt/redfish-controller/pull/25) | Serves Memory, Processors, Storage (with drives) and EthernetInterfaces for each System, read from the running VMI first and the VM spec when stopped; `ComputerSystem.Memory` becomes a link and the total moves to `MemorySummary` |
 | Fork-only commit | **no** | Change 10: `ComputerSystem` reports `SerialNumber`, `UUID`, `Manufacturer` and `Model` from the VM's firmware and machine type |
+| Fork-only commit | **no** | Change 11: `ComputerSystem.Oem.KubeVirt.NodeName` is the node a running VM is scheduled on |
 | Fork-only commit | **no** | `.github/workflows/scalefix-image.yml`: builds this fork's image on push |
 | Fork-only commit | **no** | This file |
 
@@ -231,6 +232,28 @@ upstream `main` once #25 is merged, cherry-pick this commit, and if #32 is not m
 `getVMForRead` with `GetVM` in `GetVMIdentity`. The `buildComputerSystem` extraction conflicts
 with any PR that edits either `ComputerSystem` literal in `server.go`; resolve by moving that
 PR's field into the builder.
+
+## Change 11: the node a running VM is scheduled on (fork-only)
+
+**Why.** An inventory that holds both the VMs and the bare-metal nodes they run on can link
+the two only if the VM says where it runs. Redfish has no standard property for the hypervisor
+host of a ComputerSystem (`Links` covers chassis, managers and composition, not hosting), so it
+is an Oem property.
+
+**What.** `GET /Systems/{id}` (and the boot `PATCH` response, same builder) carries
+`Oem.KubeVirt.NodeName`: the running VMI's `status.nodeName`. It is omitted when there is no
+running VMI (stopped, or a VMI in a final phase) and when the identity cannot be read.
+`Oem.KubeVirt.Processors` became a pointer (`OemProcessors`) so an Oem holding only the node
+name does not report a 0x0x0 vCPU layout; its JSON is unchanged when the topology is read.
+
+The read is part of `GetVMIdentity` (change 10), which already fetches the running VMI, so it
+costs nothing extra. A live migration changes the value; a reader polling it sees the node at
+the time of the request.
+
+**Tests.** `TestSystemIdentity`: a running VMI reports its node next to the vCPU layout; a
+stopped VM and a `Succeeded` VMI report none.
+
+**Upstreaming.** Not opened upstream; it depends on change 10.
 
 ## Config and chart plumbing
 

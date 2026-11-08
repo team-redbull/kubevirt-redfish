@@ -774,6 +774,12 @@ func (s *Server) buildComputerSystem(namespace, vmName, chassisName string, boot
 	procSummary, sysOem := s.processorFields(namespace, vmName)
 
 	identity := s.identityFields(namespace, vmName)
+	if identity.NodeName != "" {
+		if sysOem == nil {
+			sysOem = &redfish.SystemOem{}
+		}
+		sysOem.KubeVirt.NodeName = identity.NodeName
+	}
 
 	// Generate the correct System ID for the response
 	responseSystemID := config.GenerateSystemID(s.currentConfig().SystemIDConvention, namespace, vmName)

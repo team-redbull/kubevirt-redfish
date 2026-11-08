@@ -314,9 +314,11 @@ func processorSummary(cpu kubevirt.CPUTopology) redfish.ProcessorSummary {
 // lives in the system-level Oem.
 func systemOem(cpu kubevirt.CPUTopology) *redfish.SystemOem {
 	oem := &redfish.SystemOem{}
-	oem.KubeVirt.Processors.Sockets = cpu.Sockets
-	oem.KubeVirt.Processors.CoresPerSocket = cpu.Cores
-	oem.KubeVirt.Processors.ThreadsPerCore = cpu.Threads
+	oem.KubeVirt.Processors = &redfish.OemProcessors{
+		Sockets:        cpu.Sockets,
+		CoresPerSocket: cpu.Cores,
+		ThreadsPerCore: cpu.Threads,
+	}
 	return oem
 }
 
