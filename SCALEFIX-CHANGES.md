@@ -2,7 +2,8 @@
 
 This repository is a fork of [kubevirt/redfish-controller](https://github.com/kubevirt/redfish-controller).
 `main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the ten open upstream PRs merged in, each as a
-merge commit of its PR branch, plus two fork-only files. Nothing else differs.
+merge commit of its PR branch, plus the fork-only commits marked **no** in the table below (two files and change 10).
+Nothing else differs.
 
 | On `main` | Upstream PR? | Change |
 |-----------|--------------|--------|
@@ -16,6 +17,7 @@ merge commit of its PR branch, plus two fork-only files. Nothing else differs.
 | Merge of `fix-log-iso-url` | [#38](https://github.com/kubevirt/redfish-controller/pull/38) | Change 8: the image URL (which carries the image service token) is redacted in every log line |
 | Merge of `fix-failed-import-power-on` | [#39](https://github.com/kubevirt/redfish-controller/pull/39) | Change 9: a failed import drops the deferred power-on, reads as not inserted and lets the next insert import again |
 | Merge of `feature/system-memory-processors-storage-nics` | [#25](https://github.com/kubevirt/redfish-controller/pull/25) | Serves Memory, Processors, Storage (with drives) and EthernetInterfaces for each System, read from the running VMI first and the VM spec when stopped; `ComputerSystem.Memory` becomes a link and the total moves to `MemorySummary` |
+| Fork-only commit (branch `feat/system-identity-fields` until merged) | **no** | Change 10: `ComputerSystem` reports `SerialNumber`, `UUID`, `Manufacturer` and `Model` from the VM's firmware and machine type |
 | Fork-only commit | **no** | `.github/workflows/scalefix-image.yml`: builds this fork's image on push |
 | Fork-only commit | **no** | This file |
 
@@ -186,6 +188,51 @@ conflict. Writes from other processes are caught by the version check; the lock 
 needless conflicts between this process's own writers. These writes read live, never from
 the cache (change 3).
 
+## Change 10: SerialNumber, UUID, Manufacturer and Model on the ComputerSystem (fork-only)
+
+**Why.** A collector that inventories VMs through this facade has to recognise the same VM
+across runs, the way a bare-metal BMC is recognised by its serial number. Upstream's
+`ComputerSystem` had no `SerialNumber`, `UUID`, `Manufacturer` or `Model`.
+
+**What.** `GET /Systems/{id}` and the response to a boot-device `PATCH` (both now built by
+`buildComputerSystem` in `pkg/server/server.go`) carry:
+
+| Property | Source, first non-empty wins |
+|----------|------------------------------|
+| `Manufacturer` | always `"KubeVirt"` (not read from the cluster) |
+| `SerialNumber` | running VMI `spec.domain.firmware.serial`, then the VM template's |
+| `UUID` | running VMI `spec.domain.firmware.uuid`, then the VM template's, then the VM's `metadata.uid` |
+| `Model` | running VMI `spec.domain.machine.type` (the QEMU machine type), then the VM template's |
+
+The read is `GetVMIdentity` in `pkg/kubevirt/devices.go`, shaped like `GetVMCPUTopology`:
+`getVMForRead`, `getRunningVMI`, `effectiveSpec`. If the VM or the VMI cannot be read,
+`identityFields` (`pkg/server/system_devices.go`) logs it and the three read properties are
+left out (`omitempty`); the System still answers 200. A VMI read error does not fall back to
+the template, for the same reason as change #25: the staged spec may not be what is running.
+
+**On OpenShift Virtualization 4.22.12 every VM has all four.** KubeVirt writes a random
+`firmware.serial` and `firmware.uuid` and the cluster's default machine type
+(`pc-q35-rhel9.8.0`) into the VM template within seconds of creation, on a `Halted` VM too,
+so they persist across restarts and the `metadata.uid` fallback does not fire for VMs created
+through the API. It remains for a VM whose template lacks them (older KubeVirt, or a template
+edited afterwards). A VM deleted and recreated from the same manifest gets a new serial and
+UUID.
+
+**Cost.** Two more reads per System (VM and VMI), both from the change 3 cache, so a warm
+`GET /Systems/{id}` still makes no API calls. On upstream without #32 they are two GETs.
+
+**Tests.** `TestSystemIdentity` in `pkg/server/system_devices_test.go`: declared values are
+reported; a running VMI wins over the template; a field the VMI leaves unset falls back to the
+template; no firmware gives `UUID == metadata.uid` and no `SerialNumber` key; an unreadable VMI
+leaves the keys out with a 200; the boot `PATCH` response carries them too.
+
+**Upstreaming.** Not opened upstream. It depends on #25 (`getRunningVMI`, `effectiveSpec`,
+`processorFields`, `system_devices_test.go`) and #32 (`getVMForRead`). To propose it: branch from
+upstream `main` once #25 is merged, cherry-pick this commit, and if #32 is not merged replace
+`getVMForRead` with `GetVM` in `GetVMIdentity`. The `buildComputerSystem` extraction conflicts
+with any PR that edits either `ComputerSystem` literal in `server.go`; resolve by moving that
+PR's field into the builder.
+
 ## Config and chart plumbing
 
 - `pkg/config/config.go`: the new fields, defaults, validation, getters, and the
@@ -352,6 +399,6 @@ panics in the boot-once watcher, and the `Stop` methods of `AdvancedCache`, `Job
 without `-race`. `pkg/kubevirt` and `pkg/config`, which hold most of the code in these PRs,
 pass with `-race`.
 
-Not included in any PR: `.github/workflows/scalefix-image.yml` and this file. The config
+Not included in any PR: `.github/workflows/scalefix-image.yml`, this file and change 10. The config
 hot-reload bug under "Known limits" is mentioned in #29 but not fixed.
 
