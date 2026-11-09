@@ -8,7 +8,8 @@ name: release
 #   2. an annotated git tag vX.Y.Z and a GitHub release whose notes list the
 #      first-parent subjects since the previous tag (so merged upstream PRs show);
 #   3. the image ghcr.io/<owner>/kubevirt-redfish, tagged X.Y.Z, X.Y, X,
-#      sha-<full commit> and main-scalefix (floating, kept for old consumers).
+#      sha-<full commit>, plus the floating latest (metadata-action's default for
+#      semver) and main-scalefix (kept for old consumers); never deploy those two.
 # Deploy by pinning X.Y.Z (redbull-platform: gitops/charts/kubevirt-redfish).
 # SCALEFIX-CHANGES.md, "Versioning", is the long form.
 on:

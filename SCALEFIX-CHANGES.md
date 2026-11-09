@@ -44,8 +44,9 @@ Since 2026-11-09 every push to `main` gets a version (`.github/workflows/scalefi
 - **The tag** `vX.Y.Z` is annotated, and a GitHub release lists the first-parent subjects since
   the previous tag, so a merged upstream PR appears as one line.
 - **The image** `ghcr.io/team-redbull/kubevirt-redfish` is tagged `X.Y.Z`, `X.Y`, `X`,
-  `sha-<full commit>`, and the floating `main-scalefix` (kept so old consumers do not break;
-  do not deploy it). The binary reports the version: `kubevirt-redfish -version`, and the
+  `sha-<full commit>`, plus two floating tags that move with every release and must never be
+  deployed: `latest` (docker/metadata-action adds it to every semver release) and
+  `main-scalefix` (kept so old consumers do not break). The binary reports the version: `kubevirt-redfish -version`, and the
   startup banner.
 - **Deploy** by pinning `X.Y.Z`: redbull-platform `gitops/charts/kubevirt-redfish`
   (`image.tag`, `appVersion`). This is a manual commit on purpose: the facade drives VM power
