@@ -46,8 +46,9 @@ Since 2026-11-09 every push to `main` gets a version (`.github/workflows/scalefi
 - **The image** `ghcr.io/team-redbull/kubevirt-redfish` is tagged `X.Y.Z`, `X.Y`, `X`,
   `sha-<full commit>`, plus two floating tags that move with every release and must never be
   deployed: `latest` (docker/metadata-action adds it to every semver release) and
-  `main-scalefix` (kept so old consumers do not break). The binary reports the version: `kubevirt-redfish -version`, and the
-  startup banner.
+  `main-scalefix` (kept so old consumers do not break). The binary reports the version, commit and build date with
+  `kubevirt-redfish -version` (also `oc exec deploy/kubevirt-redfish -- ./kubevirt-redfish -version`
+  in a running pod); `-help` names it too. The startup log does not.
 - **Deploy** by pinning `X.Y.Z`: redbull-platform `gitops/charts/kubevirt-redfish`
   (`image.tag`, `appVersion`). This is a manual commit on purpose: the facade drives VM power
   and VirtualMedia for the provisioning workflows, so a release does not roll out by itself.
