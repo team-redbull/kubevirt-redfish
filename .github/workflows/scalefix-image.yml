@@ -1,40 +1,147 @@
-name: scalefix image
+name: release
 
-# Builds the patched controller with the repo's own Dockerfile and pushes it to
-# ghcr.io/<owner>/kubevirt-redfish. Fork-only: not part of any upstream PR.
+# Fork-only: not part of any upstream PR. Every push to main is a release:
+#   1. the version: v1.0.0 if the repo has no v* tag yet, otherwise the next
+#      semver from the Conventional Commit subjects since the last tag
+#      (a "!" before the colon, e.g. feat!: -> major, feat: -> minor,
+#      anything else, including "Merge upstream PR #N" -> patch);
+#   2. an annotated git tag vX.Y.Z and a GitHub release whose notes list the
+#      first-parent subjects since the previous tag (so merged upstream PRs show);
+#   3. the image ghcr.io/<owner>/kubevirt-redfish, tagged X.Y.Z, X.Y, X,
+#      sha-<full commit> and main-scalefix (floating, kept for old consumers).
+# Deploy by pinning X.Y.Z (redbull-platform: gitops/charts/kubevirt-redfish).
+# SCALEFIX-CHANGES.md, "Versioning", is the long form.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # pushes the tag and creates the release
   packages: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  image:
+  release:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every commit and tag since the last release
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Find the previous release
+        id: previous
+        run: |
+          set -euo pipefail
+          echo "tag=$(git tag --list 'v*' --sort=-v:refname | head -1)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/login-action@v3
+      - name: Next version from Conventional Commits
+        id: semver
+        if: steps.previous.outputs.tag != ''
+        uses: PaulHatch/semantic-version@9f72830310d5ed81233b641ee59253644cd8a8fc # v6.0.2
+        with:
+          tag_prefix: "v"
+
+      - name: Choose the version
+        id: version
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
+          COMPUTED: ${{ steps.semver.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+          if existing="$(git tag --points-at HEAD --list 'v*' --sort=-v:refname | head -1)" && [ -n "$existing" ]; then
+            tag="$existing"   # a re-run of an already released commit keeps its version
+          elif [ -z "$PREVIOUS" ]; then
+            tag="v1.0.0"      # first release of the fork
+          else
+            tag="$COMPUTED"
+          fi
+          if [ -z "$tag" ]; then echo "::error::no version computed"; exit 1; fi
+          if [ -n "$PREVIOUS" ] && [ "$tag" != "$PREVIOUS" ] \
+            && [ "$(printf '%s\n%s\n' "$PREVIOUS" "$tag" | sort -V | tail -1)" != "$tag" ]; then
+            echo "::error::$tag is not newer than $PREVIOUS"; exit 1
+          fi
+          if other="$(git rev-parse -q --verify "refs/tags/$tag^{commit}")" && [ "$other" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::$tag already exists on ${other:0:7}; refusing to re-tag"; exit 1
+          fi
+          echo "previous: ${PREVIOUS:-<none>} -> $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the release
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists; not re-tagging"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+
+      - name: Publish the release notes
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "release $TAG exists"; exit 0; fi
+          previous="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
+          range="${previous:+$previous..}$TAG"
+          {
+            echo "Image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER}/kubevirt-redfish:${TAG#v}\`"
+            echo
+            echo "### Changes"
+            echo
+            git log --first-parent --format='- %s (%h)' "$range"
+            if [ -n "$previous" ]; then
+              echo
+              echo "**Full changelog:** $previous...$TAG"
+            else
+              echo
+              echo "First versioned release of the fork. SCALEFIX-CHANGES.md lists every change it carries over upstream main."
+            fi
+          } > notes.md
+          cat notes.md
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # :main-scalefix follows main; :sha-<commit> is immutable, mirror that one.
-      - uses: docker/build-push-action@v5
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/kubevirt-redfish
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.version.outputs.tag }}
+            type=sha,prefix=sha-,format=long
+            type=raw,value=main-scalefix
+          labels: |
+            org.opencontainers.image.description=kubevirt-redfish fork (upstream main plus the PRs and fork-only changes in SCALEFIX-CHANGES.md)
+
+      - name: Build & push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: linux/amd64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/kubevirt-redfish:main-scalefix
-            ghcr.io/${{ github.repository_owner }}/kubevirt-redfish:sha-${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.description=kubevirt-redfish (${{ github.ref_name }}) + upstream PRs #29-#33 (worker stop, client-go rate limit, worker pool, VM/VMI cache, VM write race), #36-#39 (insert/power-on race, power-off not deferred, image URL redacted, failed import) #25 (Memory, Processors, Storage, EthernetInterfaces) and SerialNumber/UUID/Manufacturer/Model and Oem.KubeVirt.NodeName on ComputerSystem (fork-only)
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.tag }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}

@@ -16,8 +16,13 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubevirt-redfish cmd/main.go
+# Build the application. The release workflow passes the version; a plain build reports "dev".
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags="-X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}" \
+    -o kubevirt-redfish cmd/main.go
 
 # Final stage
 FROM docker.io/library/alpine:latest

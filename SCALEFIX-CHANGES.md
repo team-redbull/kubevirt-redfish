@@ -18,7 +18,7 @@ merge commit of its PR branch, plus the fork-only commits marked **no** in the t
 | Merge of `feature/system-memory-processors-storage-nics` | [#25](https://github.com/kubevirt/redfish-controller/pull/25) | Serves Memory, Processors, Storage (with drives) and EthernetInterfaces for each System, read from the running VMI first and the VM spec when stopped; `ComputerSystem.Memory` becomes a link and the total moves to `MemorySummary` |
 | Fork-only commit | **no** | Change 10: `ComputerSystem` reports `SerialNumber`, `UUID`, `Manufacturer` and `Model` from the VM's firmware and machine type |
 | Fork-only commit | **no** | Change 11: `ComputerSystem.Oem.KubeVirt.NodeName` is the node a running VM is scheduled on |
-| Fork-only commit | **no** | `.github/workflows/scalefix-image.yml`: builds this fork's image on push |
+| Fork-only commit | **no** | `.github/workflows/scalefix-image.yml` and the `Dockerfile`'s `VERSION`/`GIT_COMMIT`/`BUILD_DATE` build args: every push to `main` is a versioned release (see "Versioning") |
 | Fork-only commit | **no** | This file |
 
 Because the PR branches are merged as they are, `main` keeps up with upstream by merging
@@ -30,9 +30,33 @@ Until 2026-10-22 `main` was upstream `b40c637` plus the fork's own commits (`484
 `f878015`, `fe33538`, `c7c59a7`, ...), which predated upstream #26 and #27. That history was
 replaced by the layout above; it is kept on the branch `main-pre-rebuild`.
 
-`main` is the only working branch of this fork. Each push to it builds
-`ghcr.io/team-redbull/kubevirt-redfish:main-scalefix` and an immutable
-`:sha-<commit>` tag (`.github/workflows/scalefix-image.yml`).
+`main` is the only working branch of this fork, and each push to it is a release (below).
+
+## Versioning
+
+Since 2026-11-09 every push to `main` gets a version (`.github/workflows/scalefix-image.yml`):
+
+- **The version** is `v1.0.0` for the first release (the repo had no tags; it is `main` at
+  `139404d` plus the commit that added this versioning). After that it is the next semver from the Conventional Commit
+  subjects since the previous `v*` tag: a `!` before the colon (`feat!:`) is a major bump,
+  `feat:` a minor one, anything else a patch, including `docs:`, `ci:` and a
+  `Merge upstream PR #N ...` subject. Write the subject so the bump is right.
+- **The tag** `vX.Y.Z` is annotated, and a GitHub release lists the first-parent subjects since
+  the previous tag, so a merged upstream PR appears as one line.
+- **The image** `ghcr.io/team-redbull/kubevirt-redfish` is tagged `X.Y.Z`, `X.Y`, `X`,
+  `sha-<full commit>`, and the floating `main-scalefix` (kept so old consumers do not break;
+  do not deploy it). The binary reports the version: `kubevirt-redfish -version`, and the
+  startup banner.
+- **Deploy** by pinning `X.Y.Z`: redbull-platform `gitops/charts/kubevirt-redfish`
+  (`image.tag`, `appVersion`). This is a manual commit on purpose: the facade drives VM power
+  and VirtualMedia for the provisioning workflows, so a release does not roll out by itself.
+- **A re-run** (`workflow_dispatch`, or a retried job) of an already released commit keeps its
+  version and rebuilds the same tags. A computed version that is not newer than the last tag,
+  or that already exists on another commit, fails the run.
+
+Versions are the fork's own: upstream `kubevirt/redfish-controller` has no tags. Never push
+upstream's tags into this repo (`git push --tags` after `git fetch upstream --tags`); a future
+upstream `vX.Y.Z` could collide.
 
 History: the changes were first written against upstream's `kubevirt-1.8-tp` branch
 (commit `44a671e`, the source of the Red Hat `kubevirt-redfish-rhel9:v4.22` image) on a
@@ -421,6 +445,6 @@ panics in the boot-once watcher, and the `Stop` methods of `AdvancedCache`, `Job
 without `-race`. `pkg/kubevirt` and `pkg/config`, which hold most of the code in these PRs,
 pass with `-race`.
 
-Not included in any PR: `.github/workflows/scalefix-image.yml`, this file and change 10. The config
+Not included in any PR: `.github/workflows/scalefix-image.yml`, the `Dockerfile` build args, this file and changes 10 and 11 (proposed upstream as #41 and #42). The config
 hot-reload bug under "Known limits" is mentioned in #29 but not fixed.
 
