@@ -765,7 +765,10 @@ func withVM(t *testing.T, mutate func(vm *kubevirtv1.VirtualMachine)) func(dynam
 	return func(d dynamic.Interface) dynamic.Interface {
 		mock, ok := d.(*kubevirt.MockDynamicClient)
 		require.True(t, ok, "withVM must wrap the mock itself")
-		require.NoError(t, mock.MutateVM("ns", "vm-1", mutate))
+		vm, err := mock.GetVM("ns", "vm-1")
+		require.NoError(t, err)
+		mutate(vm)
+		require.NoError(t, mock.AddVM(vm))
 		return d
 	}
 }
@@ -832,29 +835,6 @@ func TestSystemIdentity(t *testing.T) {
 		assert.Equal(t, "KubeVirt", b["Manufacturer"], "the manufacturer is not read from the cluster")
 	})
 
-	t.Run("a running VM reports the node it is scheduled on", func(t *testing.T) {
-		vmi := vmiOf(kubevirtv1.VirtualMachineInstanceSpec{}, kubevirtv1.VirtualMachineInstanceStatus{
-			Phase: kubevirtv1.Running, NodeName: "worker-3"})
-		srv := newDevicesTestServerWith(t, "", vmi, nil, declare("SER-1", "", "q35"))
-		kv := getJSON(t, srv, "/redfish/v1/Systems/vm-1")["Oem"].(map[string]interface{})["KubeVirt"].(map[string]interface{})
-		assert.Equal(t, "worker-3", kv["NodeName"])
-		assert.Contains(t, kv, "Processors", "the vCPU layout is still there")
-	})
-
-	t.Run("a stopped VM has no node", func(t *testing.T) {
-		srv := newDevicesTestServerWith(t, "", nil, nil, declare("SER-1", "", "q35"))
-		kv := getJSON(t, srv, "/redfish/v1/Systems/vm-1")["Oem"].(map[string]interface{})["KubeVirt"].(map[string]interface{})
-		assert.NotContains(t, kv, "NodeName")
-	})
-
-	t.Run("a finished VMI is not where the VM runs", func(t *testing.T) {
-		vmi := vmiOf(kubevirtv1.VirtualMachineInstanceSpec{}, kubevirtv1.VirtualMachineInstanceStatus{
-			Phase: kubevirtv1.Succeeded, NodeName: "worker-3"})
-		srv := newDevicesTestServerWith(t, "", vmi, nil, declare("SER-1", "", "q35"))
-		kv := getJSON(t, srv, "/redfish/v1/Systems/vm-1")["Oem"].(map[string]interface{})["KubeVirt"].(map[string]interface{})
-		assert.NotContains(t, kv, "NodeName")
-	})
-
 	t.Run("an unreadable VM gives the zero identity", func(t *testing.T) {
 		srv := newDevicesTestServer(t, "")
 		assert.Equal(t, kubevirt.VMIdentity{}, srv.identityFields("ns", "does-not-exist"))
@@ -873,5 +853,44 @@ func TestSystemIdentity(t *testing.T) {
 		assert.Equal(t, "11111111-2222-3333-4444-555555555555", b["UUID"])
 		assert.Equal(t, "q35", b["Model"])
 		assert.Equal(t, "KubeVirt", b["Manufacturer"])
+	})
+}
+
+// The ComputerSystem names the node a running VM is scheduled on, so an
+// inventory that also holds the nodes can link a VM to its host.
+func TestSystemNodeName(t *testing.T) {
+	kubeVirtOem := func(t *testing.T, srv *Server) map[string]interface{} {
+		t.Helper()
+		oem, ok := getJSON(t, srv, "/redfish/v1/Systems/vm-1")["Oem"].(map[string]interface{})
+		require.True(t, ok, "the System has an Oem")
+		return oem["KubeVirt"].(map[string]interface{})
+	}
+
+	t.Run("a running VM reports its node next to the vCPU layout", func(t *testing.T) {
+		vmi := vmiOf(kubevirtv1.VirtualMachineInstanceSpec{}, kubevirtv1.VirtualMachineInstanceStatus{
+			Phase: kubevirtv1.Running, NodeName: "worker-3"})
+		kv := kubeVirtOem(t, newDevicesTestServerWith(t, "", vmi, nil))
+		assert.Equal(t, "worker-3", kv["NodeName"])
+		assert.Contains(t, kv, "Processors")
+	})
+
+	t.Run("a stopped VM has no node", func(t *testing.T) {
+		kv := kubeVirtOem(t, newDevicesTestServerWith(t, "", nil, nil))
+		assert.NotContains(t, kv, "NodeName")
+		assert.Contains(t, kv, "Processors", "the vCPU layout comes from the VM spec")
+	})
+
+	t.Run("a VMI in a final phase is not where the VM runs", func(t *testing.T) {
+		vmi := vmiOf(kubevirtv1.VirtualMachineInstanceSpec{}, kubevirtv1.VirtualMachineInstanceStatus{
+			Phase: kubevirtv1.Succeeded, NodeName: "worker-3"})
+		assert.NotContains(t, kubeVirtOem(t, newDevicesTestServerWith(t, "", vmi, nil)), "NodeName")
+	})
+
+	t.Run("an unreadable VMI leaves the node out and the system still answers", func(t *testing.T) {
+		forbidden := apierrors.NewForbidden(schema.GroupResource{Resource: "virtualmachineinstances"}, "vm-1", errors.New("no access"))
+		srv := newDevicesTestServerWith(t, "", nil, nil, failVMIReads(forbidden))
+		w := getSystemPath(srv, "/redfish/v1/Systems/vm-1")
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		assert.NotContains(t, w.Body.String(), "NodeName")
 	})
 }

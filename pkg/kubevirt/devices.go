@@ -79,6 +79,19 @@ func (c *Client) getRunningVMI(namespace, name string) (*kubevirtv1.VirtualMachi
 	return vmi, nil
 }
 
+// GetVMNodeName returns the node a running VM is scheduled on, or "" when the VM
+// is not running (no VMI, or a VMI in a final phase).
+func (c *Client) GetVMNodeName(namespace, name string) (string, error) {
+	vmi, err := c.getRunningVMI(namespace, name)
+	if err != nil {
+		return "", fmt.Errorf("failed to get VMI %s/%s for node lookup: %w", namespace, name, err)
+	}
+	if vmi == nil {
+		return "", nil
+	}
+	return vmi.Status.NodeName, nil
+}
+
 // effectiveSpec returns the spec that describes what the VM is now: the running
 // VMI's when there is one, otherwise the VM template's (nil if it has none).
 func effectiveSpec(vm *kubevirtv1.VirtualMachine, vmi *kubevirtv1.VirtualMachineInstance) *kubevirtv1.VirtualMachineInstanceSpec {
@@ -279,13 +292,12 @@ func (c *Client) GetVMNICs(namespace, name string) ([]VMNIC, error) {
 }
 
 // VMIdentity is what a VM reports about itself as a machine: the SMBIOS
-// system serial number and UUID, the QEMU machine type, and the node a running
-// VM is scheduled on. Each field is empty when nothing declares it.
+// system serial number and UUID, and the QEMU machine type. Each field is
+// empty when nothing declares it.
 type VMIdentity struct {
 	Serial      string
 	UUID        string
 	MachineType string
-	NodeName    string
 }
 
 // GetVMIdentity returns the serial number, UUID and machine type of a VM.
@@ -326,9 +338,6 @@ func (c *Client) GetVMIdentity(namespace, name string) (VMIdentity, error) {
 	}
 	if id.UUID == "" {
 		id.UUID = string(vm.UID)
-	}
-	if vmi != nil {
-		id.NodeName = vmi.Status.NodeName
 	}
 	return id, nil
 }

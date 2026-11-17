@@ -83,6 +83,10 @@ type Client struct {
 		operationTimes  map[string]time.Duration
 	}
 
+	// Read-only VM/VMI informer cache (cache.go)
+	cacheMu sync.RWMutex
+	vmCache *vmCache
+
 	// Boot-once watcher management
 	watcherCtx    context.Context
 	watcherCancel context.CancelFunc
@@ -97,10 +101,6 @@ type Client struct {
 	pvcWatcherCtx    context.Context
 	pvcWatcherCancel context.CancelFunc
 	pvcWatcherWg     sync.WaitGroup
-
-	// Read-only VM/VMI informer cache (cache.go)
-	cacheMu sync.RWMutex
-	vmCache *vmCache
 
 	// Per-VM serialization of read-modify-write updates (see updateVM) and
 	// the backoff sleep between conflict retries, replaceable in tests.
@@ -205,12 +205,9 @@ func volumeImportSourceToUnstructured(vis *cdiv1beta1.VolumeImportSource) (*unst
 }
 
 // kubeClientRateLimits returns the client-go QPS and burst for the Kubernetes
-// API client. They come from kubevirt.qps / kubevirt.burst in the app config
-// (or KUBEVIRT_REDFISH_KUBEVIRT_QPS / _BURST). Without a config, or for a
-// value left at zero, client-go's own defaults apply. Large deployments need
-// higher values: every Redfish request fans out to several API calls, and with
-// many BMHs polling at once the default limiter queues requests long enough
-// for the OpenShift route to time out.
+// API client, taken from kubevirt.qps / kubevirt.burst in the app config.
+// Without a config, or for a value left at zero, client-go's own defaults
+// apply.
 func kubeClientRateLimits(appConfig interface{}) (float32, int) {
 	qps, burst := rest.DefaultQPS, rest.DefaultBurst
 	if rl, ok := appConfig.(interface {
@@ -1698,12 +1695,6 @@ func (c *Client) CheckInsertedMedia(namespace, name, mediaID, imageURL string) (
 		return MediaStateNone, fmt.Errorf("failed to get VM %s/%s: %w", namespace, name, err)
 	}
 
-	// After a failed import the attached PVC holds no image; a new insert
-	// replaces it, so there is nothing to compare the request against.
-	if vm.GetAnnotations()[ImportFailedAnnotationPrefix+mediaID] != "" {
-		return MediaStateNone, nil
-	}
-
 	// Check if the device has a PVC volume attached
 	hasPVC := false
 	if vm.Spec.Template != nil {
@@ -1719,6 +1710,14 @@ func (c *Client) CheckInsertedMedia(namespace, name, mediaID, imageURL string) (
 	// does not queue a second job.
 	importing := vm.GetLabels()[ImportingLabelPrefix+mediaID] != ""
 	if !hasPVC && !importing {
+		return MediaStateNone, nil
+	}
+
+	// After a failed import the attached PVC holds no image; a new insert
+	// replaces it, so there is nothing to compare the request against. Once
+	// that new insert is accepted the importing label is back, and the marker
+	// only waits for the job to clear it.
+	if !importing && vm.GetAnnotations()[ImportFailedAnnotationPrefix+mediaID] != "" {
 		return MediaStateNone, nil
 	}
 

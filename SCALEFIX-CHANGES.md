@@ -1,29 +1,35 @@
 # kubevirt-redfish at scale: every change in this fork, and how to upstream it
 
 This repository is a fork of [kubevirt/redfish-controller](https://github.com/kubevirt/redfish-controller).
-`main` is upstream `main` (`2e38e46`, after #34 middleware removal) with the ten open upstream PRs merged in, each as a
-merge commit of its PR branch, plus the fork-only commits marked **no** in the table below (two files and changes 10 and 11). Nothing else differs.
+`main` is upstream `main` (`f3283b1`, after upstream merged #29, #31, #32, #33, #36 and #37 on 2026-11-12) with the six
+still-open upstream PRs (#30, #38, #39, #25, #41, #42) merged in, each as a merge commit of its PR branch, plus the
+fork-only commits marked **no** in the table below. Nothing else differs.
 
 | On `main` | Upstream PR? | Change |
 |-----------|--------------|--------|
-| Merge of `fix-worker-stop` | [#29](https://github.com/kubevirt/redfish-controller/pull/29) | `Worker.Stop` no longer blocks forever, so shutdown no longer waits for SIGKILL |
+| Merge of `fix-worker-stop` | [#29](https://github.com/kubevirt/redfish-controller/pull/29), merged upstream 2026-11-12 | `Worker.Stop` no longer blocks forever, so shutdown no longer waits for SIGKILL |
 | Merge of `client-go-rate-limits` | [#30](https://github.com/kubevirt/redfish-controller/pull/30) | Change 1: configurable client-go rate limit, default unchanged at 5/10 |
-| Merge of `task-worker-pool` | [#31](https://github.com/kubevirt/redfish-controller/pull/31) | Changes 2 + 4: round-robin worker selection, `server.workers` |
-| Merge of `vm-informer-cache` | [#32](https://github.com/kubevirt/redfish-controller/pull/32) | Change 3: informer cache for VM/VMI reads |
-| Merge of `fix-vm-write-race` | [#33](https://github.com/kubevirt/redfish-controller/pull/33) | Change 5: serialized, version-checked VM updates, so a concurrent insert and boot override cannot drop the `cdrom0` disk |
-| Merge of `fix-insert-power-race` | [#36](https://github.com/kubevirt/redfish-controller/pull/36) | Change 6: `InsertMedia` marks the VM before answering, so a Power On that arrives before the import job has run is deferred instead of starting the VM on an empty CD-ROM |
-| Merge of `fix-power-off-while-importing` | [#37](https://github.com/kubevirt/redfish-controller/pull/37) | Change 7: `ForceOff`/`GracefulShutdown` are never deferred by a pending import and withdraw a deferred power-on |
+| Merge of `task-worker-pool` | [#31](https://github.com/kubevirt/redfish-controller/pull/31), merged upstream 2026-11-12 | Changes 2 + 4: round-robin worker selection, `server.workers` |
+| Merge of `vm-informer-cache` | [#32](https://github.com/kubevirt/redfish-controller/pull/32), merged upstream 2026-11-12 | Change 3: informer cache for VM/VMI reads |
+| Merge of `fix-vm-write-race` | [#33](https://github.com/kubevirt/redfish-controller/pull/33), merged upstream 2026-11-12 | Change 5: serialized, version-checked VM updates, so a concurrent insert and boot override cannot drop the `cdrom0` disk |
+| Merge of `fix-insert-power-race` | [#36](https://github.com/kubevirt/redfish-controller/pull/36), merged upstream 2026-11-12 | Change 6: `InsertMedia` marks the VM before answering, so a Power On that arrives before the import job has run is deferred instead of starting the VM on an empty CD-ROM |
+| Merge of `fix-power-off-while-importing` | [#37](https://github.com/kubevirt/redfish-controller/pull/37), merged upstream 2026-11-12 | Change 7: `ForceOff`/`GracefulShutdown` are never deferred by a pending import and withdraw a deferred power-on |
 | Merge of `fix-log-iso-url` | [#38](https://github.com/kubevirt/redfish-controller/pull/38) | Change 8: the image URL (which carries the image service token) is redacted in every log line |
 | Merge of `fix-failed-import-power-on` | [#39](https://github.com/kubevirt/redfish-controller/pull/39) | Change 9: a failed import drops the deferred power-on, reads as not inserted and lets the next insert import again |
 | Merge of `feature/system-memory-processors-storage-nics` | [#25](https://github.com/kubevirt/redfish-controller/pull/25) | Serves Memory, Processors, Storage (with drives) and EthernetInterfaces for each System, read from the running VMI first and the VM spec when stopped; `ComputerSystem.Memory` becomes a link and the total moves to `MemorySummary` |
-| Fork-only commit | **no** | Change 10: `ComputerSystem` reports `SerialNumber`, `UUID`, `Manufacturer` and `Model` from the VM's firmware and machine type |
-| Fork-only commit | **no** | Change 11: `ComputerSystem.Oem.KubeVirt.NodeName` is the node a running VM is scheduled on |
+| Merge of `system-identity-fields` (its own commit) | [#41](https://github.com/kubevirt/redfish-controller/pull/41) | Change 10: `ComputerSystem` reports `SerialNumber`, `UUID`, `Manufacturer` and `Model` from the VM's firmware and machine type |
+| Merge of `system-node-name` (its own commit) | [#42](https://github.com/kubevirt/redfish-controller/pull/42) | Change 11: `ComputerSystem.Oem.KubeVirt.NodeName` is the node a running VM is scheduled on |
+| Fork-only commit | **no** | `GetVMIdentity` (change 10) reads the VM through `getVMForRead`, the #32 cache, as #25 does; #41 still uses `GetVM` because its branch predates #25's move onto the cache |
 | Fork-only commit | **no** | `.github/workflows/scalefix-image.yml` and the `Dockerfile`'s `VERSION`/`GIT_COMMIT`/`BUILD_DATE` build args: every push to `main` is a versioned release (see "Versioning") |
 | Fork-only commit | **no** | This file |
 
 Because the PR branches are merged as they are, `main` keeps up with upstream by merging
 `upstream/main`; once a PR is merged upstream, its commit is already here. If a PR branch
-changes during review, merge that branch into `main` again. Never build a PR from
+changes during review, merge that branch into `main` again. Exception: #41 and #42 are each one
+commit stacked on an earlier copy of #25 (`4e06ba5`), so `main` merges only that commit on top of
+the current #25 (the merge commit's tree is the cherry-pick; #41 and #42 conflict with each other in
+`server.go`, `README.md` and `system_devices_test.go`, resolved by keeping both; the boot `PATCH`
+response is #41's `buildComputerSystem`, which carries #42's `withNodeName`). Never build a PR from
 `git diff upstream/main..main`: that diff also carries the fork-only files and the other PRs.
 
 Until 2026-10-22 `main` was upstream `b40c637` plus the fork's own commits (`484d07d`,
@@ -89,10 +95,11 @@ operator can raise it for a large deployment. (An earlier version of the fork ha
 100/200; review moved the default back to client-go's own.)
 
 - `pkg/config/config.go`: `KubeVirtConfig` gains `QPS float32` and `Burst int`
-  (`kubevirt.qps`, `kubevirt.burst`). Defaults are `DefaultKubeClientQPS` /
-  `DefaultKubeClientBurst`, defined as client-go's `rest.DefaultQPS` (5) and
-  `rest.DefaultBurst` (10), so leaving them unset changes nothing. Zero means "use the
-  default"; negatives are rejected by validation.
+  (`kubevirt.qps`, `kubevirt.burst`). Unset keys default to client-go's `rest.DefaultQPS` (5)
+  and `rest.DefaultBurst` (10), so leaving them unset changes nothing. Zero is left as zero
+  and the client falls back to client-go's defaults; negatives are rejected by validation.
+  The client is built once at startup, so unlike the hot-reloaded parts of the config a
+  change here needs a pod restart.
 - Environment variables need no extra code: viper already maps `KUBEVIRT_REDFISH_*`,
   so `KUBEVIRT_REDFISH_KUBEVIRT_QPS` / `KUBEVIRT_REDFISH_KUBEVIRT_BURST` override the
   file. This is the same mechanism every other setting uses, which is why it is
@@ -111,7 +118,7 @@ operator can raise it for a large deployment. (An earlier version of the fork ha
 about `12 × N / qps` seconds, so 5/10 saturates at ~15 BMHs. 100/200 was what fixed
 the original problem, and it is safe for the API server: 100 requests/second at ~20 ms
 each is about two concurrent requests, against an OpenShift API server that allows
-thousands in flight. `Waited for Xs due to client-side throttling` in the log means
+thousands in flight. `client-side throttling` in the log means
 the limit is too low for the load. For example:
 
 ```yaml
@@ -214,7 +221,7 @@ conflict. Writes from other processes are caught by the version check; the lock 
 needless conflicts between this process's own writers. These writes read live, never from
 the cache (change 3).
 
-## Change 10: SerialNumber, UUID, Manufacturer and Model on the ComputerSystem (fork-only)
+## Change 10: SerialNumber, UUID, Manufacturer and Model on the ComputerSystem (#41)
 
 **Why.** A collector that inventories VMs through this facade has to recognise the same VM
 across runs, the way a bare-metal BMC is recognised by its serial number. Upstream's
@@ -252,14 +259,13 @@ reported; a running VMI wins over the template; a field the VMI leaves unset fal
 template; no firmware gives `UUID == metadata.uid` and no `SerialNumber` key; an unreadable VMI
 leaves the keys out with a 200; the boot `PATCH` response carries them too.
 
-**Upstreaming.** Not opened upstream. It depends on #25 (`getRunningVMI`, `effectiveSpec`,
-`processorFields`, `system_devices_test.go`) and #32 (`getVMForRead`). To propose it: branch from
-upstream `main` once #25 is merged, cherry-pick this commit, and if #32 is not merged replace
-`getVMForRead` with `GetVM` in `GetVMIdentity`. The `buildComputerSystem` extraction conflicts
-with any PR that edits either `ComputerSystem` literal in `server.go`; resolve by moving that
-PR's field into the builder.
+**Upstreaming.** Opened as [#41](https://github.com/kubevirt/redfish-controller/pull/41) from `system-identity-fields`. It depends on #25
+(`getRunningVMI`, `effectiveSpec`, `processorFields`, `system_devices_test.go`) and is stacked on an
+earlier copy of it, which read with `GetVM`; on `main` `GetVMIdentity` uses `getVMForRead` (fork-only
+line, see the table). The `buildComputerSystem` extraction conflicts with any PR that edits either
+`ComputerSystem` literal in `server.go`; resolve by moving that PR's field into the builder.
 
-## Change 11: the node a running VM is scheduled on (fork-only)
+## Change 11: the node a running VM is scheduled on (#42)
 
 **Why.** An inventory that holds both the VMs and the bare-metal nodes they run on can link
 the two only if the VM says where it runs. Redfish has no standard property for the hypervisor
@@ -268,18 +274,20 @@ is an Oem property.
 
 **What.** `GET /Systems/{id}` (and the boot `PATCH` response, same builder) carries
 `Oem.KubeVirt.NodeName`: the running VMI's `status.nodeName`. It is omitted when there is no
-running VMI (stopped, or a VMI in a final phase) and when the identity cannot be read.
+running VMI (stopped, or a VMI in a final phase) and when the VMI cannot be read (logged; the
+System still answers 200).
 `Oem.KubeVirt.Processors` became a pointer (`OemProcessors`) so an Oem holding only the node
 name does not report a 0x0x0 vCPU layout; its JSON is unchanged when the topology is read.
 
-The read is part of `GetVMIdentity` (change 10), which already fetches the running VMI, so it
-costs nothing extra. A live migration changes the value; a reader polling it sees the node at
-the time of the request.
+The read is `GetVMNodeName` in `pkg/kubevirt/devices.go` (`getRunningVMI`, so a cached VMI read),
+added to the Oem by `withNodeName` in `pkg/server/system_devices.go`. It is independent of change 10.
+A live migration changes the value; a reader polling it sees the node at the time of the request.
 
-**Tests.** `TestSystemIdentity`: a running VMI reports its node next to the vCPU layout; a
-stopped VM and a `Succeeded` VMI report none.
+**Tests.** `TestSystemNodeName`: a running VMI reports its node next to the vCPU layout; a
+stopped VM and a `Succeeded` VMI report none; an unreadable VMI leaves it out with a 200.
 
-**Upstreaming.** Not opened upstream; it depends on change 10.
+**Upstreaming.** Opened as [#42](https://github.com/kubevirt/redfish-controller/pull/42) from `system-node-name`, stacked on the same earlier
+copy of #25 as #41.
 
 ## Config and chart plumbing
 
@@ -390,15 +398,15 @@ the logger).
 
 Opened on 2026-10-21 against upstream `main` (`590daee`) as five independent PRs, so the
 maintainers can review and merge them separately and in any order. Each branch is based
-directly on upstream, and this fork's `main` is those five branches merged together:
+directly on upstream (all but #30 merged upstream on 2026-11-12; #30 is rebased onto `f3283b1`):
 
 | PR | Branch (on this fork) | Content |
 |----|-----------------------|---------|
-| [#29](https://github.com/kubevirt/redfish-controller/pull/29) | `fix-worker-stop` | `defer w.wg.Done()` in `Worker.work` (the shutdown hang under "Known limits") + `pkg/server/worker_test.go` |
+| [#29](https://github.com/kubevirt/redfish-controller/pull/29), merged upstream 2026-11-12 | `fix-worker-stop` | `defer w.wg.Done()` in `Worker.work` (the shutdown hang under "Known limits") + `pkg/server/worker_test.go` |
 | [#30](https://github.com/kubevirt/redfish-controller/pull/30) | `client-go-rate-limits` | Change 1: `kubevirt.qps` / `kubevirt.burst`, `ratelimit_test.go`, logger initialized before the client |
-| [#31](https://github.com/kubevirt/redfish-controller/pull/31) | `task-worker-pool` | Changes 2 + 4: round-robin worker selection and `server.workers`, with a new `pkg/server/task_manager_test.go` |
-| [#32](https://github.com/kubevirt/redfish-controller/pull/32) | `vm-informer-cache` | Change 3: `cache.go` / `cache_test.go`, the `go mod tidy` lines (the `kubevirt.cache_enabled` switch and the write tracker were dropped in review, `bd12d08`) |
-| [#33](https://github.com/kubevirt/redfish-controller/pull/33) | `fix-vm-write-race` | Change 5: every VM read-modify-write goes through `updateVM` (`vm_update.go`), serialized per VM (`vmlock.go`) and sent with `resourceVersion` so a stale write is retried instead of overwriting; fixes the `cdrom0` disk lost when `InsertMedia` and the boot-once `PATCH` race |
+| [#31](https://github.com/kubevirt/redfish-controller/pull/31), merged upstream 2026-11-12 | `task-worker-pool` | Changes 2 + 4: round-robin worker selection and `server.workers`, with a new `pkg/server/task_manager_test.go` |
+| [#32](https://github.com/kubevirt/redfish-controller/pull/32), merged upstream 2026-11-12 | `vm-informer-cache` | Change 3: `cache.go` / `cache_test.go`, the `go mod tidy` lines (the `kubevirt.cache_enabled` switch and the write tracker were dropped in review, `bd12d08`) |
+| [#33](https://github.com/kubevirt/redfish-controller/pull/33), merged upstream 2026-11-12 | `fix-vm-write-race` | Change 5: every VM read-modify-write goes through `updateVM` (`vm_update.go`), serialized per VM (`vmlock.go`) and sent with `resourceVersion` so a stale write is retried instead of overwriting; fixes the `cdrom0` disk lost when `InsertMedia` and the boot-once `PATCH` race |
 
 Opened on 2026-10-25, the same way, for the virtual media insert vs. power-on race seen
 when many hosts are enrolled at once (the VM started with an empty CD-ROM and then held the
@@ -406,9 +414,9 @@ RWO ISO volume, leaving the import pod on Multi-Attach and the host stuck in ins
 
 | PR | Branch (on this fork) | Content |
 |----|-----------------------|---------|
-| [#36](https://github.com/kubevirt/redfish-controller/pull/36) | `fix-insert-power-race` | Change 6: `MarkImportPending` writes a dated `pending-<unix>` placeholder into `importing.redfish/<device>` (and the URL annotation) before `InsertMedia` is answered; a repeat while pending is "in progress"; a failed job and a 5-minute reconcile sweep clear orphaned placeholders (`pkg/kubevirt/import_pending.go`) |
-| [#37](https://github.com/kubevirt/redfish-controller/pull/37) | `fix-power-off-while-importing` | Change 7: only `On`/`ForceRestart`/`GracefulRestart` wait for a pending import; a power-off runs at once and removes `power-after-import.redfish` (`ClearPowerAfterImportLabel`) |
-| [#38](https://github.com/kubevirt/redfish-controller/pull/38) | `fix-log-iso-url` | Change 8: `logger.RedactURL` (scheme, host, path only) on every log line that carried the image URL; the parse error no longer repeats the input |
+| [#36](https://github.com/kubevirt/redfish-controller/pull/36), merged upstream 2026-11-12 | `fix-insert-power-race` | Change 6: `MarkImportPending` writes a dated `pending-<unix>` placeholder into `importing.redfish/<device>` (and the URL annotation) before `InsertMedia` is answered; a repeat while pending is "in progress"; a failed job and a 5-minute reconcile sweep clear orphaned placeholders (`pkg/kubevirt/import_pending.go`) |
+| [#37](https://github.com/kubevirt/redfish-controller/pull/37), merged upstream 2026-11-12 | `fix-power-off-while-importing` | Change 7: only `On`/`ForceRestart`/`GracefulRestart` wait for a pending import; a power-off runs at once and removes `power-after-import.redfish` (`ClearPowerAfterImportLabel`) |
+| [#38](https://github.com/kubevirt/redfish-controller/pull/38) | `fix-log-iso-url` | Change 8: `logger.RedactURL` (scheme, host and path, with `<redacted>` in place of each removed piece) on every log line that carried the image URL; the parse error no longer repeats the input |
 | [#39](https://github.com/kubevirt/redfish-controller/pull/39) | `fix-failed-import-power-on` | Change 9: a failed import pod removes the importing label, the deferred power command and sets `import-failed.redfish/<device>` in one patch; `Inserted` is false while importing or after a failure; `CheckInsertedMedia` lets the next insert import again; insert and eject clear the marker |
 
 Rebase note for these four: #39 adds one `delete(annotations, ...)` line to the eject that
@@ -418,10 +426,9 @@ line inside the closure (see the merge commit of #39 on `main`). #36 names its G
 `CheckInsertedMedia` in separate hunks and merge cleanly.
 
 Also merged: [#25](https://github.com/kubevirt/redfish-controller/pull/25)
-(`feature/system-memory-processors-storage-nics`, on the `TomerKarniol/redfish-controller` fork). It conflicted with #32/#33
-in the mock client (`notFoundError` kept) and in `client.go` (`GetVMCPU` dropped, as #25 replaces it). In the merge
-commit its new read paths were also moved onto the #32 cache (`getVMForRead`/`getVMIForRead`) and its
-`setCacheHeaders` calls became `setNoCacheHeaders`, matching the rest of this fork.
+(`feature/system-memory-processors-storage-nics`, on the `TomerKarniol/redfish-controller` fork). Its current head is
+rebased onto `f3283b1` and already reads through the #32 cache (`getVMForRead`/`getVMIForRead`), so it merges cleanly.
+(Until 2026-11-17 `main` carried an older #25 whose merge commit did that adaptation by hand.)
 
 Each PR body states the problem, the cause, the fix, the behaviour change and the
 evidence: the new unit test failing on upstream `main`, and before/after numbers measured
@@ -429,10 +436,9 @@ on this cluster with that branch alone (100 × `GET /Systems/{id}`, 20 in parall
 average at the default limiter, 0.89 s at 100/200, 0.83 s with the cache at the default
 limiter and zero API calls; pod termination 32.5 s on upstream, 3.2 s with #29). Every
 branch passed `gofmt`, `go build`, `go vet`, `go test ./...`, `go mod tidy` and
-`helm lint`, and the four merged together reproduce this fork's code exactly (checked
-with a scratch merge).
+`helm lint`.
 
-Rebase note: #30, #31 and #32 each add the same two test helpers (`minimalConfig`,
+Rebase note (historical; #31 and #32 are merged and the rebased #30 adds the helpers once): #30, #31 and #32 each added the same two test helpers (`minimalConfig`,
 `writeConfig`) to `pkg/config/config_test.go`, and all three touch adjacent lines in
 `config.go`, `config/config.yaml`, `helm/values.yaml` and `helm/templates/secret.yaml`.
 #32 and #33 both add fields to `Client` and to its constructor in `pkg/kubevirt/client.go`.
@@ -447,6 +453,12 @@ panics in the boot-once watcher, and the `Stop` methods of `AdvancedCache`, `Job
 without `-race`. `pkg/kubevirt` and `pkg/config`, which hold most of the code in these PRs,
 pass with `-race`.
 
-Not included in any PR: `.github/workflows/scalefix-image.yml`, the `Dockerfile` build args, this file and changes 10 and 11 (proposed upstream as #41 and #42). The config
+**Status on 2026-11-17:** upstream merged #29, #31, #32, #33, #36 and #37 on 2026-11-12 (`f3283b1`).
+Still open: #30, #38 (now also marks each removed URL piece with `<redacted>`), #39 (now also compares a
+request against a pending re-insert after a failed import), #25 (rebased onto the merged PRs, reads
+through the cache), #41 and #42.
+
+Not included in any PR: `.github/workflows/scalefix-image.yml`, the `Dockerfile` build args, the
+`getVMForRead` line in `GetVMIdentity` and this file. The config
 hot-reload bug under "Known limits" is mentioned in #29 but not fixed.
 
