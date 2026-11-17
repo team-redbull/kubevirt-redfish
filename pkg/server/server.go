@@ -772,6 +772,7 @@ func (s *Server) buildComputerSystem(namespace, vmName, chassisName string, boot
 
 	// Get real CPU information
 	procSummary, sysOem := s.processorFields(namespace, vmName)
+	sysOem = s.withNodeName(sysOem, namespace, vmName)
 
 	identity := s.identityFields(namespace, vmName)
 
