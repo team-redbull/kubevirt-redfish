@@ -95,10 +95,11 @@ operator can raise it for a large deployment. (An earlier version of the fork ha
 100/200; review moved the default back to client-go's own.)
 
 - `pkg/config/config.go`: `KubeVirtConfig` gains `QPS float32` and `Burst int`
-  (`kubevirt.qps`, `kubevirt.burst`). Defaults are `DefaultKubeClientQPS` /
-  `DefaultKubeClientBurst`, defined as client-go's `rest.DefaultQPS` (5) and
-  `rest.DefaultBurst` (10), so leaving them unset changes nothing. Zero means "use the
-  default"; negatives are rejected by validation.
+  (`kubevirt.qps`, `kubevirt.burst`). Unset keys default to client-go's `rest.DefaultQPS` (5)
+  and `rest.DefaultBurst` (10), so leaving them unset changes nothing. Zero is left as zero
+  and the client falls back to client-go's defaults; negatives are rejected by validation.
+  The client is built once at startup, so unlike the hot-reloaded parts of the config a
+  change here needs a pod restart.
 - Environment variables need no extra code: viper already maps `KUBEVIRT_REDFISH_*`,
   so `KUBEVIRT_REDFISH_KUBEVIRT_QPS` / `KUBEVIRT_REDFISH_KUBEVIRT_BURST` override the
   file. This is the same mechanism every other setting uses, which is why it is
@@ -117,7 +118,7 @@ operator can raise it for a large deployment. (An earlier version of the fork ha
 about `12 × N / qps` seconds, so 5/10 saturates at ~15 BMHs. 100/200 was what fixed
 the original problem, and it is safe for the API server: 100 requests/second at ~20 ms
 each is about two concurrent requests, against an OpenShift API server that allows
-thousands in flight. `Waited for Xs due to client-side throttling` in the log means
+thousands in flight. `client-side throttling` in the log means
 the limit is too low for the load. For example:
 
 ```yaml
@@ -397,7 +398,7 @@ the logger).
 
 Opened on 2026-10-21 against upstream `main` (`590daee`) as five independent PRs, so the
 maintainers can review and merge them separately and in any order. Each branch is based
-directly on upstream, and this fork's `main` is those five branches merged together:
+directly on upstream (all but #30 merged upstream on 2026-11-12; #30 is rebased onto `f3283b1`):
 
 | PR | Branch (on this fork) | Content |
 |----|-----------------------|---------|
@@ -425,10 +426,9 @@ line inside the closure (see the merge commit of #39 on `main`). #36 names its G
 `CheckInsertedMedia` in separate hunks and merge cleanly.
 
 Also merged: [#25](https://github.com/kubevirt/redfish-controller/pull/25)
-(`feature/system-memory-processors-storage-nics`, on the `TomerKarniol/redfish-controller` fork). It conflicted with #32/#33
-in the mock client (`notFoundError` kept) and in `client.go` (`GetVMCPU` dropped, as #25 replaces it). In the merge
-commit its new read paths were also moved onto the #32 cache (`getVMForRead`/`getVMIForRead`) and its
-`setCacheHeaders` calls became `setNoCacheHeaders`, matching the rest of this fork.
+(`feature/system-memory-processors-storage-nics`, on the `TomerKarniol/redfish-controller` fork). Its current head is
+rebased onto `f3283b1` and already reads through the #32 cache (`getVMForRead`/`getVMIForRead`), so it merges cleanly.
+(Until 2026-11-17 `main` carried an older #25 whose merge commit did that adaptation by hand.)
 
 Each PR body states the problem, the cause, the fix, the behaviour change and the
 evidence: the new unit test failing on upstream `main`, and before/after numbers measured
@@ -436,10 +436,9 @@ on this cluster with that branch alone (100 × `GET /Systems/{id}`, 20 in parall
 average at the default limiter, 0.89 s at 100/200, 0.83 s with the cache at the default
 limiter and zero API calls; pod termination 32.5 s on upstream, 3.2 s with #29). Every
 branch passed `gofmt`, `go build`, `go vet`, `go test ./...`, `go mod tidy` and
-`helm lint`, and the four merged together reproduce this fork's code exactly (checked
-with a scratch merge).
+`helm lint`.
 
-Rebase note: #30, #31 and #32 each add the same two test helpers (`minimalConfig`,
+Rebase note (historical; #31 and #32 are merged and the rebased #30 adds the helpers once): #30, #31 and #32 each added the same two test helpers (`minimalConfig`,
 `writeConfig`) to `pkg/config/config_test.go`, and all three touch adjacent lines in
 `config.go`, `config/config.yaml`, `helm/values.yaml` and `helm/templates/secret.yaml`.
 #32 and #33 both add fields to `Client` and to its constructor in `pkg/kubevirt/client.go`.
