@@ -306,7 +306,7 @@ type VMIdentity struct {
 // template. A VM that declares no firmware UUID reports its Kubernetes UID
 // instead, so a stopped VM still has a stable UUID.
 func (c *Client) GetVMIdentity(namespace, name string) (VMIdentity, error) {
-	vm, err := c.GetVM(namespace, name)
+	vm, err := c.getVMForRead(namespace, name)
 	if err != nil {
 		return VMIdentity{}, fmt.Errorf("failed to get VM %s/%s for identity lookup: %w", namespace, name, err)
 	}
